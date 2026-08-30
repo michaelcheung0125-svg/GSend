@@ -23,12 +23,17 @@ export default function App() {
     if (autoJoinHandled) return;
     autoJoinHandled = true;
 
+    // A fresh code in the URL is an explicit request to join, so it outranks whatever
+    // session this tab was in before.
     const code = readCodeFromUrl();
-    if (!code) return;
+    if (code) {
+      setPrefill(code);
+      history.replaceState(null, "", location.pathname);
+      client.join(code);
+      return;
+    }
 
-    setPrefill(code);
-    history.replaceState(null, "", location.pathname);
-    client.join(code);
+    client.restore();
   }, []);
 
   return (

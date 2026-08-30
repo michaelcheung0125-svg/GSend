@@ -1,10 +1,12 @@
 import {
   ERROR_TEXT,
+  RESUME_GRACE_MS,
   isValidCode,
   type Role,
   type ServerMessage,
 } from "../../shared/protocol";
 import { PeerLink, type PeerChannels, type PeerState } from "./peer";
+import { clearSession, loadSession, saveSession } from "./session-store";
 import { Signaling } from "./signaling";
 import { TransferEngine, type TextMessage, type TransferView } from "./transfer";
 
@@ -26,6 +28,8 @@ export interface Snapshot {
   joinExpiresAt: number | null;
   shareUrl: string | null;
   peerPresent: boolean;
+  /** When the other device dropped off, so the UI can explain the wait. */
+  peerAbsentSince: number | null;
   connection: PeerState;
   approval: Approval;
   channelsOpen: boolean;
@@ -36,8 +40,8 @@ export interface Snapshot {
   error: string | null;
 }
 
-const MAX_RECONNECT_ATTEMPTS = 8;
 const PROGRESS_THROTTLE_MS = 40;
+const MAX_RECONNECT_DELAY_MS = 15_000;
 
 interface Credentials {
   code: string;
@@ -45,16 +49,29 @@ interface Credentials {
   role: Role;
 }
 
+/** Sent over the signalling relay so each side can tell a blip from a reload. */
+interface InstanceAnnouncement {
+  instance: string;
+}
+
 export class GSendClient {
   private readonly signaling: Signaling;
   private readonly transfer: TransferEngine;
   private peer: PeerLink | null = null;
+
+  /**
+   * Identifies this page load. A peer that comes back with a different id has a brand
+   * new RTCPeerConnection, so our half of the old one can never be revived.
+   */
+  private readonly instanceId = crypto.randomUUID();
+  private remoteInstance: string | null = null;
 
   private phase: Phase = "idle";
   private role: Role | null = null;
   private credentials: Credentials | null = null;
   private joinExpiresAt: number | null = null;
   private peerPresent = false;
+  private peerAbsentSince: number | null = null;
   private connection: PeerState = "new";
   private approval: Approval = "pending";
   private channelsOpen = false;
@@ -64,7 +81,10 @@ export class GSendClient {
 
   private closedByUser = false;
   private reconnectAttempt = 0;
+  /** Retry until this moment, matching how long the server keeps the room. */
+  private reconnectDeadline: number | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private peerTimer: ReturnType<typeof setTimeout> | null = null;
   private progressTimer: ReturnType<typeof setTimeout> | null = null;
 
   private listeners = new Set<() => void>();
@@ -75,6 +95,7 @@ export class GSendClient {
     this.signaling = new Signaling({
       onOpen: () => {
         this.reconnectAttempt = 0;
+        this.reconnectDeadline = null;
       },
       onMessage: (msg) => this.onServerMessage(msg),
       onClose: (code) => this.onSignalingClosed(code),
@@ -89,6 +110,7 @@ export class GSendClient {
       },
     });
 
+    this.installLifecycleHandlers();
     this.snapshot = this.build();
   }
 
@@ -122,11 +144,33 @@ export class GSendClient {
     this.signaling.connect({ role: "guest", code });
   }
 
+  /** Rejoin the room this tab was in before it reloaded. */
+  restore(): boolean {
+    const stored = loadSession();
+    if (!stored) return false;
+
+    this.resetSession();
+    this.role = stored.role;
+    this.credentials = {
+      code: stored.code,
+      sessionKey: stored.sessionKey,
+      role: stored.role,
+    };
+    this.approval = stored.approved ? "granted" : "pending";
+    this.phase = "pairing";
+    this.reconnectDeadline = Date.now() + RESUME_GRACE_MS;
+    this.persist();
+    this.emitNow();
+    this.resumeSignaling();
+    return true;
+  }
+
   approve(): void {
     if (this.role !== "host" || this.approval !== "pending") return;
     this.peer?.sendControl(JSON.stringify({ t: "approve" }));
     this.approval = "granted";
     this.phase = "active";
+    this.persist();
     this.emitNow();
   }
 
@@ -172,29 +216,20 @@ export class GSendClient {
         break;
 
       case "peer-joined":
-        this.peerPresent = true;
-        this.phase = "pairing";
-        this.startPeer();
-        this.emitNow();
-        break;
-
       case "peer-resumed":
         this.peerPresent = true;
-        this.startPeer();
-        this.peer?.restart();
+        this.clearPeerAbsence();
+        if (this.phase === "hosting") this.phase = "pairing";
+        this.announceInstance();
         this.emitNow();
         break;
 
       case "peer-left":
-        this.peerPresent = false;
-        if (this.phase === "active" || this.phase === "pairing") {
-          this.connection = "reconnecting";
-        }
-        this.emitNow();
+        this.onPeerLeft();
         break;
 
       case "signal":
-        void this.peer?.handleSignal(msg.data);
+        this.onSignal(msg.data);
         break;
 
       case "code-expired":
@@ -206,10 +241,7 @@ export class GSendClient {
         break;
 
       case "error":
-        this.closedByUser = true;
-        this.error = ERROR_TEXT[msg.code] ?? msg.message;
-        this.phase = this.phase === "joining" ? "idle" : "ended";
-        this.emitNow();
+        this.onServerError(msg.code, msg.message);
         break;
     }
   }
@@ -220,6 +252,7 @@ export class GSendClient {
     this.joinExpiresAt = msg.joinExpiresAt;
     this.peerPresent = msg.peerPresent;
     this.error = null;
+    this.persist();
 
     if (msg.role === "host") {
       this.phase = msg.peerPresent ? "pairing" : "hosting";
@@ -227,7 +260,27 @@ export class GSendClient {
       this.phase = "pairing";
     }
 
-    if (msg.peerPresent) this.startPeer();
+    if (msg.peerPresent) {
+      this.clearPeerAbsence();
+      // Announced before any offer so the peer can rebuild first if we are new to it.
+      this.announceInstance();
+      this.startPeer();
+    }
+
+    this.emitNow();
+  }
+
+  private onServerError(code: string, message: string): void {
+    const wasPaired = this.phase === "active" || this.phase === "pairing";
+    const expired = code === "code_not_found" || code === "bad_key" || code === "session_full";
+
+    this.closedByUser = true;
+    this.error =
+      wasPaired && expired
+        ? "The session expired while this page was away. Start a new one."
+        : (ERROR_TEXT[code as keyof typeof ERROR_TEXT] ?? message);
+    this.phase = this.phase === "joining" ? "idle" : "ended";
+    clearSession();
     this.emitNow();
   }
 
@@ -237,26 +290,94 @@ export class GSendClient {
     // 4000-range closes are deliberate refusals; the error message already arrived.
     if (code >= 4000 && code < 4100) return;
 
-    if (!this.credentials || this.reconnectAttempt >= MAX_RECONNECT_ATTEMPTS) {
+    if (!this.credentials) {
       this.end("Lost the connection to the server.");
       return;
     }
 
-    const delay = Math.min(1000 * 2 ** this.reconnectAttempt, 15_000);
+    const now = Date.now();
+    if (this.reconnectDeadline === null) this.reconnectDeadline = now + RESUME_GRACE_MS;
+    if (now >= this.reconnectDeadline) {
+      this.end("Lost the connection to the server.");
+      return;
+    }
+
+    const delay = Math.min(1000 * 2 ** this.reconnectAttempt, MAX_RECONNECT_DELAY_MS);
     this.reconnectAttempt += 1;
     this.connection = "reconnecting";
     this.emitNow();
 
-    this.reconnectTimer = setTimeout(() => {
-      const creds = this.credentials;
-      if (!creds) return;
-      this.signaling.connect({
-        role: "resume",
-        code: creds.code,
-        key: creds.sessionKey,
-        as: creds.role,
-      });
-    }, delay);
+    this.clearReconnectTimer();
+    this.reconnectTimer = setTimeout(() => this.resumeSignaling(), delay);
+  }
+
+  private resumeSignaling(): void {
+    const creds = this.credentials;
+    if (!creds) return;
+    this.signaling.connect({
+      role: "resume",
+      code: creds.code,
+      key: creds.sessionKey,
+      as: creds.role,
+    });
+  }
+
+  // --- peer identity -------------------------------------------------------
+
+  private announceInstance(): void {
+    this.signaling.send({ t: "signal", data: { instance: this.instanceId } });
+  }
+
+  private onSignal(data: unknown): void {
+    const announcement = data as Partial<InstanceAnnouncement> | null;
+    if (announcement && typeof announcement.instance === "string") {
+      this.onRemoteInstance(announcement.instance);
+      return;
+    }
+    void this.peer?.handleSignal(data);
+  }
+
+  private onRemoteInstance(id: string): void {
+    const previous = this.remoteInstance;
+    this.remoteInstance = id;
+    this.peerPresent = true;
+    this.clearPeerAbsence();
+    if (this.phase === "hosting") this.phase = "pairing";
+
+    if (previous !== null && previous !== id) {
+      // The peer reloaded. Its DTLS identity changed, so ICE restart cannot revive
+      // our data channels — the whole connection has to be built again.
+      this.rebuildPeer();
+    } else if (!this.peer) {
+      this.startPeer();
+    } else if (this.connection === "failed" || this.connection === "reconnecting") {
+      this.peer.restart();
+    }
+
+    this.emitNow();
+  }
+
+  private onPeerLeft(): void {
+    this.peerPresent = false;
+    this.peerAbsentSince = Date.now();
+    if (this.phase === "active" || this.phase === "pairing") this.connection = "reconnecting";
+
+    if (this.peerTimer) clearTimeout(this.peerTimer);
+    this.peerTimer = setTimeout(() => {
+      this.peerTimer = null;
+      if (this.peerPresent) return;
+      this.end("The other device left and did not come back.");
+    }, RESUME_GRACE_MS);
+
+    this.emitNow();
+  }
+
+  private clearPeerAbsence(): void {
+    this.peerAbsentSince = null;
+    if (this.peerTimer) {
+      clearTimeout(this.peerTimer);
+      this.peerTimer = null;
+    }
   }
 
   // --- peer ----------------------------------------------------------------
@@ -286,14 +407,21 @@ export class GSendClient {
     this.peer.start();
   }
 
+  private rebuildPeer(): void {
+    this.peer?.close();
+    this.peer = null;
+    this.channelsOpen = false;
+    this.connection = "connecting";
+    this.transfer.abortInFlight("the other device reloaded");
+    this.startPeer();
+  }
+
   private onChannels(channels: PeerChannels): void {
     this.channelsOpen = true;
     this.transfer.attach(channels);
 
     // The guest cannot do anything until the host presses Approve (PLAN.md §2).
-    if (this.approval === "granted") this.phase = "active";
-    else this.phase = "pairing";
-
+    this.phase = this.approval === "granted" ? "active" : "pairing";
     this.emitNow();
   }
 
@@ -308,6 +436,7 @@ export class GSendClient {
     if (msg.t === "approve") {
       this.approval = "granted";
       this.phase = "active";
+      this.persist();
       this.emitNow();
       return;
     }
@@ -322,6 +451,47 @@ export class GSendClient {
     this.transfer.handleControl(raw);
   }
 
+  // --- page lifecycle ------------------------------------------------------
+
+  private installLifecycleHandlers(): void {
+    if (typeof window === "undefined") return;
+
+    const wake = () => this.checkHealth();
+
+    // A bfcache restore resumes a page that was frozen mid-session.
+    window.addEventListener("pageshow", (event) => {
+      if (event.persisted) wake();
+    });
+    window.addEventListener("focus", wake);
+    window.addEventListener("online", wake);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") wake();
+    });
+    window.addEventListener("pagehide", () => this.persist());
+  }
+
+  /**
+   * Mobile Safari closes the signalling socket and suspends WebRTC when a tab goes to
+   * the background, and a bfcache restore does not reliably deliver the close event,
+   * so the page can come back believing it is still connected. Probe rather than trust.
+   */
+  private checkHealth(): void {
+    if (!this.credentials) return;
+    if (this.phase === "idle" || this.phase === "ended" || this.phase === "creating") return;
+
+    if (!this.signaling.isOpen) {
+      this.clearReconnectTimer();
+      this.reconnectAttempt = 0;
+      this.reconnectDeadline = Date.now() + RESUME_GRACE_MS;
+      this.connection = "reconnecting";
+      this.emitNow();
+      this.resumeSignaling();
+      return;
+    }
+
+    if (this.peer && !this.channelsOpen) this.peer.restart();
+  }
+
   // --- lifecycle -----------------------------------------------------------
 
   private end(reason: string | null): void {
@@ -334,6 +504,7 @@ export class GSendClient {
     this.signaling.close();
     this.transfer.detach();
     this.clearTimers();
+    clearSession();
     this.emitNow();
   }
 
@@ -349,11 +520,14 @@ export class GSendClient {
     this.peer = null;
     this.signaling.close();
     this.transfer.reset();
+    clearSession();
 
     this.role = null;
     this.credentials = null;
+    this.remoteInstance = null;
     this.joinExpiresAt = null;
     this.peerPresent = false;
+    this.peerAbsentSince = null;
     this.connection = "new";
     this.approval = "pending";
     this.channelsOpen = false;
@@ -362,12 +536,30 @@ export class GSendClient {
     this.error = null;
     this.closedByUser = false;
     this.reconnectAttempt = 0;
+    this.reconnectDeadline = null;
+  }
+
+  private persist(): void {
+    if (!this.credentials) return;
+    if (this.phase === "idle" || this.phase === "ended") return;
+    saveSession({
+      code: this.credentials.code,
+      sessionKey: this.credentials.sessionKey,
+      role: this.credentials.role,
+      approved: this.approval === "granted",
+    });
+  }
+
+  private clearReconnectTimer(): void {
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
   }
 
   private clearTimers(): void {
-    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.clearReconnectTimer();
+    if (this.peerTimer) clearTimeout(this.peerTimer);
     if (this.progressTimer) clearTimeout(this.progressTimer);
-    this.reconnectTimer = null;
+    this.peerTimer = null;
     this.progressTimer = null;
   }
 
@@ -401,6 +593,7 @@ export class GSendClient {
       joinExpiresAt: this.joinExpiresAt,
       shareUrl: this.credentials ? `${location.origin}/?c=${this.credentials.code}` : null,
       peerPresent: this.peerPresent,
+      peerAbsentSince: this.peerAbsentSince,
       connection: this.connection,
       approval: this.approval,
       channelsOpen: this.channelsOpen,

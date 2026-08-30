@@ -96,7 +96,9 @@ export class TransferEngine {
     this.attachWaiters = [];
     for (const wake of waiters) wake();
 
-    // Tell the sender where each interrupted file should pick up again.
+    // Tell the sender where each interrupted file should pick up again. This is sent
+    // even when empty: a sender waiting on resume needs the empty answer to learn that
+    // the receiver no longer has the file, rather than waiting forever.
     const offsets: Record<string, number> = {};
     for (const [id, transfer] of this.incoming) {
       if (transfer.status === "active" || transfer.status === "paused") {
@@ -104,7 +106,29 @@ export class TransferEngine {
         offsets[id] = transfer.received;
       }
     }
-    if (Object.keys(offsets).length > 0) this.callbacks.sendControl({ t: "resume", offsets });
+    this.callbacks.sendControl({ t: "resume", offsets });
+
+    this.callbacks.onChange();
+  }
+
+  /** Both halves of every in-flight transfer are unrecoverable; stop them cleanly. */
+  abortInFlight(reason: string): void {
+    for (const transfer of this.outgoing.values()) {
+      if (transfer.status === "done" || transfer.status === "cancelled") continue;
+      transfer.status = "cancelled";
+      transfer.error = reason;
+      transfer.awaitingResume = false;
+      transfer.updatedAt = Date.now();
+      transfer.resumeGate?.();
+    }
+
+    for (const transfer of this.incoming.values()) {
+      if (transfer.status === "done" || transfer.status === "cancelled") continue;
+      transfer.status = "cancelled";
+      transfer.error = reason;
+      transfer.updatedAt = Date.now();
+      void transfer.sink.abort();
+    }
 
     this.callbacks.onChange();
   }

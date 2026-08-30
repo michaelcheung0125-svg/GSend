@@ -28,18 +28,19 @@ export default function PairingPanel({ client, state }: Props) {
     );
   }
 
-  const message =
-    state.role === "guest"
-      ? state.channelsOpen
-        ? "Waiting for the other device to approve."
-        : "Connecting to the other device…"
+  const waitingForPeer = state.peerAbsentSince !== null;
+
+  const message = waitingForPeer
+    ? "The other device dropped off. It has a few minutes to come back before this session closes."
+    : state.role === "guest" && state.channelsOpen
+      ? "Waiting for the other device to approve."
       : "Connecting to the other device…";
 
   return (
     <section className="card card--centered">
       <h1 className="card__title">
         <span className="spinner" aria-hidden="true" />
-        {state.channelsOpen ? "Almost there" : "Connecting"}
+        {waitingForPeer ? "Waiting for the other device" : state.channelsOpen ? "Almost there" : "Connecting"}
       </h1>
       <p className="muted">{message}</p>
       {state.connection === "failed" && (

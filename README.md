@@ -92,16 +92,24 @@ origin, so there is nothing else to host. Durable Objects run on Cloudflare's fr
 
 Working and verified browser-to-browser: code pairing, QR deep links, the approval
 gate, file transfer in both directions (byte-exact at 32 MB), the text channel,
-per-file progress and cancel, and the join error paths.
+per-file progress and cancel, and the join error paths. Verified on real devices over
+a real network, not just two tabs on one machine.
+
+**Reconnection** survives a page reload on either side: session credentials live in
+`sessionStorage`, each page load carries an instance id so a peer can tell a network
+blip (keep the connection, restart ICE) from a reload (rebuild the connection), and
+the client retries for the same five minutes the server keeps the room open. Mobile
+Safari needs this because it closes the signalling socket and suspends WebRTC when a
+tab goes to the background, and a bfcache restore does not reliably report it.
 
 Known gaps, all scheduled:
 
 - **File size is capped at 256 MB (200 MB on Safari)** because received bytes are held
   in memory. M2 swaps in streaming sinks (File System Access on Chromium desktop, OPFS
   elsewhere) to reach the 1 GB target.
-- **Resume after a network switch is implemented but not yet tested in anger.** The
-  protocol carries per-file offsets and the session survives 5 minutes without sockets;
-  M2 exercises it properly.
+- **A transfer in flight when a peer reloads is cancelled, not resumed.** The receiver's
+  buffered bytes die with the page, so both halves stop with a message. Resume across a
+  reload needs the streaming sinks above; resume across a network blip already works.
 - **No TURN server.** If both devices sit behind strict NATs the connection fails with
   a message suggesting the same Wi-Fi. M2/M3 measure how often that actually happens
   before deciding whether to pay for a relay.
