@@ -1,0 +1,26 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "gsend",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-08-01",
+  "assets": {
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    // Signalling must reach the Worker even though the SPA fallback matches everything.
+    "run_worker_first": ["/api/*"]
+  },
+  "durable_objects": {
+    "bindings": [
+      { "name": "SESSION", "class_name": "SessionRoom" },
+      { "name": "JOIN_GUARD", "class_name": "JoinGuard" }
+    ]
+  },
+  "migrations": [
+    {
+      // SQLite-backed classes are the ones available on the free plan.
+      "tag": "v1",
+      "new_sqlite_classes": ["SessionRoom", "JoinGuard"]
+    }
+  ],
+  "observability": { "enabled": true }
+}
