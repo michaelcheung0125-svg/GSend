@@ -174,6 +174,19 @@ export async function prepareStorage(): Promise<boolean> {
   return diskAvailable;
 }
 
+/** Placeholder for a transfer that already finished; nothing more will be written. */
+class CompletedSink implements FileSink {
+  async write(): Promise<void> {}
+  async finish(): Promise<Blob> {
+    return new Blob([]);
+  }
+  async abort(): Promise<void> {}
+}
+
+export function createCompletedSink(): FileSink {
+  return new CompletedSink();
+}
+
 export async function createSink(id: string): Promise<FileSink> {
   if (await prepareStorage()) {
     try {
@@ -196,6 +209,22 @@ export async function reopenSink(id: string): Promise<{ sink: FileSink; received
   try {
     const received = await pool.reopen(id);
     return { sink: new OpfsSink(id), received };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Read back a file that finished arriving before the page reloaded, so it can be
+ * offered for saving again instead of being stranded on disk.
+ */
+export async function readCompleted(id: string, mime: string): Promise<Blob | null> {
+  if (!(await prepareStorage())) return null;
+  try {
+    const root = await navigator.storage.getDirectory();
+    const dir = await root.getDirectoryHandle(DIRECTORY);
+    const file = await (await dir.getFileHandle(id)).getFile();
+    return mime ? new Blob([file], { type: mime }) : file;
   } catch {
     return null;
   }

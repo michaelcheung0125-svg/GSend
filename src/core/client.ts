@@ -267,7 +267,16 @@ export class GSendClient {
     this.error = null;
     this.persist();
 
-    if (msg.role === "host") {
+    // A signalling reconnect says nothing about the peer connection, which usually
+    // outlives it. Knocking an approved, connected session back to "pairing" here hid
+    // the transfer list while bytes were still arriving underneath it.
+    const established = this.approval === "granted" && this.channelsOpen;
+    if (established) {
+      this.phase = "active";
+      // The bar was left saying "Reconnecting" by the signalling drop even though the
+      // peer connection carrying the bytes never went anywhere.
+      this.connection = "connected";
+    } else if (msg.role === "host") {
       this.phase = msg.peerPresent ? "pairing" : "hosting";
     } else {
       this.phase = "pairing";

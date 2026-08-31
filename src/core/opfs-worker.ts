@@ -11,8 +11,12 @@
 
 const DIRECTORY = "incoming";
 const FLUSH_EVERY_WRITES = 32;
-/** Files left behind by transfers that never finished are swept after this long. */
-const STALE_FILE_MS = 60 * 60 * 1000;
+/**
+ * Files left behind by abandoned transfers are swept after this long. It is generous
+ * because a completed file sits here until the user saves it, and losing one they
+ * meant to keep is far worse than holding some bytes for a day.
+ */
+const STALE_FILE_MS = 24 * 60 * 60 * 1000;
 
 interface OpenRequest {
   t: "open";

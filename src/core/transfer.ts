@@ -7,7 +7,15 @@ import {
   type PeerControl,
 } from "./protocol";
 import type { StoredTransfer } from "./session-store";
-import { canAccept, createSink, maxFileBytes, reopenSink, type FileSink } from "./sink";
+import {
+  canAccept,
+  createCompletedSink,
+  createSink,
+  maxFileBytes,
+  readCompleted,
+  reopenSink,
+  type FileSink,
+} from "./sink";
 
 /** How much of the source file to pull into memory at a time before framing it. */
 const READ_BLOCK_BYTES = 4 * 1024 * 1024;
@@ -104,9 +112,6 @@ export class TransferEngine {
     const now = Date.now();
 
     for (const stored of incoming) {
-      const reopened = await reopenSink(stored.id);
-      if (!reopened) continue;
-
       const meta: FileMeta = {
         id: stored.id,
         wireId: stored.wireId,
@@ -114,6 +119,28 @@ export class TransferEngine {
         size: stored.size,
         mime: stored.mime,
       };
+
+      if (stored.done) {
+        // Finished before the reload and never saved. The bytes are still on disk, so
+        // put the row back with a working download rather than stranding the file.
+        const blob = await readCompleted(stored.id, stored.mime);
+        if (!blob) continue;
+        this.incoming.set(stored.id, {
+          meta,
+          sink: createCompletedSink(),
+          received: stored.size,
+          status: "done",
+          downloadUrl: URL.createObjectURL(blob),
+          startedAt: now,
+          updatedAt: now,
+          lastAckAt: 0,
+          lastAckBytes: 0,
+        });
+        continue;
+      }
+
+      const reopened = await reopenSink(stored.id);
+      if (!reopened) continue;
 
       this.incoming.set(stored.id, {
         meta,
@@ -136,13 +163,17 @@ export class TransferEngine {
   persistableIncoming(): StoredTransfer[] {
     const rows: StoredTransfer[] = [];
     for (const transfer of this.incoming.values()) {
-      if (transfer.status !== "active" && transfer.status !== "paused") continue;
+      const inFlight = transfer.status === "active" || transfer.status === "paused";
+      // Completed files are kept too: until the user saves one it exists only as a
+      // download link, and a reload would otherwise lose a file that did arrive.
+      if (!inFlight && transfer.status !== "done") continue;
       rows.push({
         id: transfer.meta.id,
         wireId: transfer.meta.wireId,
         name: transfer.meta.name,
         size: transfer.meta.size,
         mime: transfer.meta.mime,
+        done: transfer.status === "done",
       });
     }
     return rows;

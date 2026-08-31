@@ -115,6 +115,11 @@ it was made over a local network or punched through NAT. No addresses, no timest
 beyond the day, no session identifiers, nothing tied to a person. The totals are public
 at `/api/stats`.
 
+**A received file stays available until it is saved.** It sits in the origin-private
+filesystem, and its row survives a reload, a dropped connection, and the session going
+quiet — the download link is rebuilt from the file on disk. Backgrounding a phone
+mid-transfer no longer costs you the file.
+
 **A receiver can reload mid-transfer and carry on.** The bytes are already on disk, and
 the transfer's metadata rides along in `sessionStorage`, so a reloaded page reopens the
 file, asks it how many bytes actually arrived, and tells the sender where to pick up.

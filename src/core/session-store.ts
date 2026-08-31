@@ -2,13 +2,15 @@ import { RESUME_GRACE_MS, type Role } from "../../shared/protocol";
 
 const STORAGE_KEY = "gsend.session";
 
-/** Enough to recognise a partially received file again and route its frames. */
+/** Enough to recognise a received file again and either resume it or offer it back. */
 export interface StoredTransfer {
   id: string;
   wireId: number;
   name: string;
   size: number;
   mime: string;
+  /** Complete and waiting to be saved, rather than still arriving. */
+  done: boolean;
 }
 
 export interface StoredSession {

@@ -60,10 +60,16 @@ export default function App() {
         {(state.phase === "creating" || state.phase === "hosting") && (
           <HostPanel client={client} state={state} />
         )}
-        {(state.phase === "joining" || state.phase === "pairing") && (
-          <PairingPanel client={client} state={state} />
-        )}
-        {state.phase === "active" && <TransferPanel client={client} state={state} />}
+        {(state.phase === "joining" || state.phase === "pairing") &&
+          state.approval !== "granted" && <PairingPanel client={client} state={state} />}
+        {/*
+          Once the session is unlocked the panel stays up even while the connection is
+          degraded. A received file lives in this list until it is saved, so hiding it
+          on a dropped connection loses the file.
+        */}
+        {(state.phase === "active" ||
+          ((state.phase === "pairing" || state.phase === "joining") &&
+            state.approval === "granted")) && <TransferPanel client={client} state={state} />}
         {state.phase === "ended" && (
           <section className="card card--centered">
             <h1 className="card__title">Session ended</h1>
