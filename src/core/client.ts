@@ -2,6 +2,8 @@ import {
   ERROR_TEXT,
   RESUME_GRACE_MS,
   isValidCode,
+  type ConnectionOutcome,
+  type ConnectionPath,
   type Role,
   type ServerMessage,
 } from "../../shared/protocol";
@@ -42,6 +44,8 @@ export interface Snapshot {
 
 const PROGRESS_THROTTLE_MS = 40;
 const MAX_RECONNECT_DELAY_MS = 15_000;
+/** ICE restarts often recover, so a failure only counts once it stops recovering. */
+const FAILURE_CONFIRM_MS = 15_000;
 
 interface Credentials {
   code: string;
@@ -86,6 +90,8 @@ export class GSendClient {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private peerTimer: ReturnType<typeof setTimeout> | null = null;
   private progressTimer: ReturnType<typeof setTimeout> | null = null;
+  private failureTimer: ReturnType<typeof setTimeout> | null = null;
+  private statReported = false;
 
   private listeners = new Set<() => void>();
   /** Built at the end of the constructor, once the engines it reads from exist. */
@@ -389,6 +395,7 @@ export class GSendClient {
       onSignal: (data) => this.signaling.send({ t: "signal", data }),
       onState: (state) => {
         this.connection = state;
+        if (state === "failed") this.scheduleFailureStat();
         this.emitNow();
       },
       onChannels: (channels) => this.onChannels(channels),
@@ -420,9 +427,39 @@ export class GSendClient {
     this.channelsOpen = true;
     this.transfer.attach(channels);
 
+    if (this.failureTimer) {
+      clearTimeout(this.failureTimer);
+      this.failureTimer = null;
+    }
+    void this.reportStat("connected");
+
     // The guest cannot do anything until the host presses Approve (PLAN.md §2).
     this.phase = this.approval === "granted" ? "active" : "pairing";
     this.emitNow();
+  }
+
+  // --- connection metrics --------------------------------------------------
+
+  private scheduleFailureStat(): void {
+    if (this.statReported || this.failureTimer) return;
+    this.failureTimer = setTimeout(() => {
+      this.failureTimer = null;
+      if (this.channelsOpen) return;
+      void this.reportStat("failed");
+    }, FAILURE_CONFIRM_MS);
+  }
+
+  /**
+   * One anonymous count per session: did a direct connection work, and over what kind
+   * of path. Nothing identifying is sent, and the server keeps only daily totals.
+   */
+  private async reportStat(outcome: ConnectionOutcome): Promise<void> {
+    if (this.statReported) return;
+    this.statReported = true;
+
+    let path: ConnectionPath = "unknown";
+    if (outcome === "connected" && this.peer) path = await this.peer.describePath();
+    this.signaling.send({ t: "stat", outcome, path });
   }
 
   private onPeerControl(raw: string): void {
@@ -537,6 +574,7 @@ export class GSendClient {
     this.closedByUser = false;
     this.reconnectAttempt = 0;
     this.reconnectDeadline = null;
+    this.statReported = false;
   }
 
   private persist(): void {
@@ -559,8 +597,10 @@ export class GSendClient {
     this.clearReconnectTimer();
     if (this.peerTimer) clearTimeout(this.peerTimer);
     if (this.progressTimer) clearTimeout(this.progressTimer);
+    if (this.failureTimer) clearTimeout(this.failureTimer);
     this.peerTimer = null;
     this.progressTimer = null;
+    this.failureTimer = null;
   }
 
   // --- store ---------------------------------------------------------------

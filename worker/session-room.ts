@@ -6,6 +6,8 @@ import {
   RESUME_GRACE_MS,
   SESSION_IDLE_MS,
   type ClientMessage,
+  type ConnectionOutcome,
+  type ConnectionPath,
   type Role,
   type ServerErrorCode,
   type ServerMessage,
@@ -19,6 +21,8 @@ interface Meta {
   lastActiveAt: number;
   /** When the last socket detached, or null while at least one peer is attached. */
   emptySince: number | null;
+  /** One connection outcome per session; whichever peer reports first wins. */
+  statReported?: boolean;
 }
 
 const META_KEY = "meta";
@@ -167,9 +171,25 @@ export class SessionRoom extends DurableObject<Env> {
       return;
     }
 
+    if (msg.t === "stat") {
+      await this.recordStat(msg.outcome, msg.path);
+      return;
+    }
+
     if (msg.t === "bye") {
       await this.destroy("peer closed the session");
     }
+  }
+
+  private async recordStat(outcome: ConnectionOutcome, path: ConnectionPath): Promise<void> {
+    const meta = await this.ctx.storage.get<Meta>(META_KEY);
+    if (!meta || meta.statReported) return;
+
+    meta.statReported = true;
+    await this.ctx.storage.put(META_KEY, meta);
+
+    const metrics = this.env.METRICS.get(this.env.METRICS.idFromName("global"));
+    await metrics.record(outcome, path);
   }
 
   async webSocketClose(ws: WebSocket): Promise<void> {

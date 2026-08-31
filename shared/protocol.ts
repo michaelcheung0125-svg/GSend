@@ -53,7 +53,34 @@ export type ServerMessage =
   | { t: "closed"; reason: string }
   | { t: "error"; code: ServerErrorCode; message: string };
 
-export type ClientMessage = { t: "signal"; data: unknown } | { t: "bye" };
+export type ConnectionOutcome = "connected" | "failed";
+
+/**
+ * How the two browsers ended up talking. `lan` means both candidates were local, so
+ * the devices were on the same network; `internet` means hole punching across NATs
+ * actually worked. The ratio of these to `failed` is the evidence for whether this
+ * project ever needs to pay for a TURN relay (PLAN.md §3.2).
+ */
+export type ConnectionPath = "lan" | "internet" | "unknown";
+
+export type ClientMessage =
+  | { t: "signal"; data: unknown }
+  | { t: "stat"; outcome: ConnectionOutcome; path: ConnectionPath }
+  | { t: "bye" };
+
+export interface DayCounts {
+  connectedLan: number;
+  connectedInternet: number;
+  connectedUnknown: number;
+  failed: number;
+}
+
+export const EMPTY_DAY: DayCounts = {
+  connectedLan: 0,
+  connectedInternet: 0,
+  connectedUnknown: 0,
+  failed: 0,
+};
 
 export function isValidCode(code: string): boolean {
   return new RegExp(`^[0-9]{${CODE_LENGTH}}$`).test(code);

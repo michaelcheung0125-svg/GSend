@@ -2,6 +2,7 @@ import { CODE_LENGTH, ERROR_TEXT, isValidCode, type ServerErrorCode } from "../s
 
 export { SessionRoom } from "./session-room";
 export { JoinGuard } from "./join-guard";
+export { Metrics } from "./metrics";
 
 /** How many random codes to try before giving up on finding a free one. */
 const CODE_ATTEMPTS = 8;
@@ -12,6 +13,13 @@ export default {
 
     if (url.pathname === "/api/ws") return openSocket(request, env, url);
     if (url.pathname === "/api/health") return Response.json({ ok: true });
+
+    // Public on purpose: these are anonymous counts with nothing to protect, and
+    // showing them is part of being honest about what this service records.
+    if (url.pathname === "/api/stats") {
+      const metrics = env.METRICS.get(env.METRICS.idFromName("global"));
+      return Response.json(await metrics.summary());
+    }
     if (url.pathname.startsWith("/api/")) return new Response("not found", { status: 404 });
 
     return env.ASSETS.fetch(request);

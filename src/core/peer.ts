@@ -1,4 +1,19 @@
+import type { ConnectionPath } from "../../shared/protocol";
 import { HEADER_BYTES } from "./protocol";
+
+interface StatEntry {
+  type: string;
+  /** candidate-pair */
+  state?: string;
+  nominated?: boolean;
+  selected?: boolean;
+  localCandidateId?: string;
+  remoteCandidateId?: string;
+  /** transport */
+  selectedCandidatePairId?: string;
+  /** local/remote-candidate */
+  candidateType?: string;
+}
 
 /** No TURN by design (PLAN.md §3.2): if hole punching fails we tell the user, not pay for relay. */
 const ICE_SERVERS: RTCIceServer[] = [
@@ -146,6 +161,30 @@ export class PeerLink {
     this.pc.restartIce();
   }
 
+  /** Which kind of path the connection actually took, for the TURN decision. */
+  async describePath(): Promise<ConnectionPath> {
+    const pc = this.pc;
+    if (!pc) return "unknown";
+
+    try {
+      const stats = await pc.getStats();
+      const pair = selectedPair(stats);
+      if (!pair) return "unknown";
+
+      const local = stats.get(pair.localCandidateId ?? "") as StatEntry | undefined;
+      const remote = stats.get(pair.remoteCandidateId ?? "") as StatEntry | undefined;
+      if (!local?.candidateType || !remote?.candidateType) return "unknown";
+
+      // Both ends local means the devices were already on the same network; anything
+      // else means hole punching had to cross a NAT.
+      return local.candidateType === "host" && remote.candidateType === "host"
+        ? "lan"
+        : "internet";
+    } catch {
+      return "unknown";
+    }
+  }
+
   sendControl(raw: string): boolean {
     if (this.control?.readyState !== "open") return false;
     this.control.send(raw);
@@ -230,4 +269,31 @@ export class PeerLink {
     const usable = Math.min(negotiated - HEADER_BYTES, MAX_PAYLOAD_BYTES);
     return Math.max(MIN_PAYLOAD_BYTES, usable);
   }
+}
+
+/**
+ * Several pairs sit in "succeeded" at once, so picking an arbitrary one misreports the
+ * path. Chrome names the live pair through the transport, Firefox flags it on the pair.
+ */
+function selectedPair(stats: RTCStatsReport): StatEntry | null {
+  const pairs: StatEntry[] = [];
+  let selectedId: string | undefined;
+
+  stats.forEach((report: StatEntry) => {
+    if (report.type === "transport" && report.selectedCandidatePairId) {
+      selectedId = report.selectedCandidatePairId;
+    }
+    if (report.type === "candidate-pair") pairs.push(report);
+  });
+
+  if (selectedId) {
+    const byId = stats.get(selectedId) as StatEntry | undefined;
+    if (byId) return byId;
+  }
+
+  return (
+    pairs.find((p) => p.selected) ??
+    pairs.find((p) => p.state === "succeeded" && p.nominated) ??
+    null
+  );
 }

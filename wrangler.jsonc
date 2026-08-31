@@ -16,7 +16,8 @@
   "durable_objects": {
     "bindings": [
       { "name": "SESSION", "class_name": "SessionRoom" },
-      { "name": "JOIN_GUARD", "class_name": "JoinGuard" }
+      { "name": "JOIN_GUARD", "class_name": "JoinGuard" },
+      { "name": "METRICS", "class_name": "Metrics" }
     ]
   },
   "migrations": [
@@ -24,6 +25,10 @@
       // SQLite-backed classes are the ones available on the free plan.
       "tag": "v1",
       "new_sqlite_classes": ["SessionRoom", "JoinGuard"]
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": ["Metrics"]
     }
   ],
   "observability": { "enabled": true }
