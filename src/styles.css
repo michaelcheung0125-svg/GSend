@@ -90,10 +90,13 @@ body {
   text-align: center;
 }
 
+/* A privacy link that reads as grey body text is a privacy link nobody finds. */
 .app__footer-link {
-  color: var(--muted);
+  color: var(--accent);
+  font-weight: 550;
   text-decoration: underline;
-  text-underline-offset: 2px;
+  text-underline-offset: 3px;
+  padding: 6px 4px;
 }
 
 .app__footer-link:hover {
