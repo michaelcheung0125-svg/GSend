@@ -4,7 +4,7 @@ Send files and text straight from one browser to another. Pair two devices with 
 4-digit code, then transfer over a direct WebRTC connection — the files never touch
 a server.
 
-> The domain is not registered yet (see `PLAN.md` §6).
+Live at **[gsend.cc](https://gsend.cc)**.
 
 ## How it works
 
@@ -86,9 +86,13 @@ origin, so there is nothing else to host. Durable Objects run on Cloudflare's fr
 | `src/core/peer.ts` | RTCPeerConnection, perfect negotiation, data channels |
 | `src/core/transfer.ts` | Chunked file transfer, backpressure, acks, resume |
 | `src/core/client.ts` | Session state machine the UI subscribes to |
+| `src/core/sink.ts` | OPFS streaming storage for received files |
+| `src/core/opfs-worker.ts` | Owns the filesystem handles off the main thread |
 | `src/ui/` | React screens |
+| `public/` | Manifest, icons, service worker, privacy page |
+| `scripts/make-icons.mjs` | Regenerates the icon PNGs (`npm run icons`) |
 
-## Current status (M1)
+## Current status
 
 Working and verified browser-to-browser: code pairing, QR deep links, the approval
 gate, file transfer in both directions (byte-exact at 32 MB), the text channel,
