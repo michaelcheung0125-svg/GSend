@@ -28,7 +28,8 @@ export default function PairingPanel({ client, state }: Props) {
     );
   }
 
-  const waitingForPeer = state.peerAbsentSince !== null;
+  // An open data channel outranks a stale departure notice from signalling.
+  const waitingForPeer = state.peerAbsentSince !== null && !state.channelsOpen;
 
   const message = waitingForPeer
     ? "The other device dropped off. It has a few minutes to come back before this session closes."

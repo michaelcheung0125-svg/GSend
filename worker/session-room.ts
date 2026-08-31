@@ -204,7 +204,13 @@ export class SessionRoom extends DurableObject<Env> {
     const role = this.roleOf(ws);
     if (!role) return;
 
-    this.sendTo(role === "host" ? "guest" : "host", { t: "peer-left" });
+    // A resume closes the socket it supersedes, and that closure lands after the
+    // resume has already been announced. Reporting it as a departure would leave the
+    // other peer waiting indefinitely for someone who is already back.
+    const superseded = this.ctx.getWebSockets(role).some((s) => s !== ws);
+    if (!superseded) {
+      this.sendTo(role === "host" ? "guest" : "host", { t: "peer-left" });
+    }
 
     const remaining = this.ctx.getWebSockets().filter((s) => s !== ws);
     if (remaining.length > 0) return;

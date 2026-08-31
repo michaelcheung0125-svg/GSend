@@ -370,13 +370,26 @@ export class GSendClient {
       // The peer reloaded. Its DTLS identity changed, so ICE restart cannot revive
       // our data channels — the whole connection has to be built again.
       this.rebuildPeer();
-    } else if (!this.peer) {
-      this.startPeer();
-    } else if (this.connection === "failed" || this.connection === "reconnecting") {
-      this.peer.restart();
+    } else {
+      this.revivePeer();
     }
 
     this.emitNow();
+  }
+
+  /**
+   * The peer is reachable again but our channels are not. An ICE restart is enough for
+   * a connection that is merely struggling; one that has actually closed can only be
+   * replaced, and leaving it be is what strands a session on "Connecting" forever.
+   */
+  private revivePeer(): void {
+    if (!this.peer) {
+      this.startPeer();
+      return;
+    }
+    if (this.channelsOpen) return;
+    if (this.connection === "closed" || this.connection === "failed") this.rebuildPeer();
+    else this.peer.restart();
   }
 
   private onPeerLeft(): void {
@@ -446,6 +459,9 @@ export class GSendClient {
 
   private onChannels(channels: PeerChannels): void {
     this.channelsOpen = true;
+    // Open channels are proof the peer is here, whatever the signalling said earlier.
+    this.clearPeerAbsence();
+    this.peerPresent = true;
     this.transfer.attach(channels);
 
     if (this.failureTimer) {
@@ -547,7 +563,7 @@ export class GSendClient {
       return;
     }
 
-    if (this.peer && !this.channelsOpen) this.peer.restart();
+    this.revivePeer();
   }
 
   // --- lifecycle -----------------------------------------------------------

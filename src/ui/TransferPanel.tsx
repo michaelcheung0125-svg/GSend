@@ -117,7 +117,7 @@ function ConnectionBar({ state }: { state: Snapshot }) {
   const online = state.connection === "connected" && state.channelsOpen;
   const label = online
     ? "Connected"
-    : state.peerAbsentSince !== null
+    : state.peerAbsentSince !== null && !state.channelsOpen
       ? "The other device dropped off — waiting for it to come back"
       : state.connection === "reconnecting"
         ? "Reconnecting…"
