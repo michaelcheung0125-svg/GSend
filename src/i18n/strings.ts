@@ -52,7 +52,7 @@ export const en = {
   "pairing.waitingApproval": "Waiting for the other device to approve.",
   "pairing.connectingBody": "Connecting to the other device…",
   "pairing.noDirectRoute":
-    "Could not open a direct connection on this network. Put both devices on the same Wi-Fi and try again.",
+    "Could not open a direct connection between these two networks. Mobile data usually blocks it — putting both devices on the same Wi-Fi is the reliable fix.",
 
   "transfer.dropHere": "Drop files here",
   "transfer.chooseFiles": "Choose files",
@@ -156,7 +156,7 @@ export const zh: Record<MessageKey, string> = {
   "pairing.connecting": "連線中",
   "pairing.waitingApproval": "正在等待另一台裝置同意。",
   "pairing.connectingBody": "正在連線到另一台裝置…",
-  "pairing.noDirectRoute": "在這個網路環境下無法建立直接連線。請讓兩台裝置連上同一個 Wi-Fi 再試一次。",
+  "pairing.noDirectRoute": "無法在這兩個網路之間建立直接連線。行動網路通常會擋掉這種連線——讓兩台裝置連上同一個 Wi-Fi 是最可靠的做法。",
 
   "transfer.dropHere": "把檔案拖到這裡",
   "transfer.chooseFiles": "選擇檔案",

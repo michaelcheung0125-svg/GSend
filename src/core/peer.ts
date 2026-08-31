@@ -35,6 +35,14 @@ const MIN_PAYLOAD_BYTES = 16 * 1024;
  */
 const DISCONNECT_GRACE_MS = 4_000;
 
+/**
+ * Restarting ICE flips the state back to "connecting", which wipes the failure message
+ * off the screen. Retrying forever therefore leaves someone watching an explanation
+ * flash past too fast to read, so retries are budgeted and then the connection is
+ * allowed to stay visibly failed.
+ */
+const MAX_ICE_RESTARTS = 3;
+
 export type PeerState = "new" | "connecting" | "connected" | "reconnecting" | "failed" | "closed";
 
 export interface PeerChannels {
@@ -71,6 +79,7 @@ export class PeerLink {
    */
   private disposed = false;
   private disconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private restartAttempts = 0;
 
   /** The impolite side wins offer collisions; the host also drives ICE restarts. */
   private readonly polite: boolean;
@@ -107,6 +116,7 @@ export class PeerLink {
           break;
         case "connected":
           this.clearDisconnectTimer();
+          this.restartAttempts = 0;
           this.handlers.onState("connected");
           break;
         case "disconnected":
@@ -114,7 +124,7 @@ export class PeerLink {
           break;
         case "failed":
           this.handlers.onState("failed");
-          this.restart();
+          this.attemptIceRestart();
           break;
         case "closed":
           this.handlers.onState("closed");
@@ -123,7 +133,7 @@ export class PeerLink {
     });
 
     pc.addEventListener("iceconnectionstatechange", () => {
-      if (!this.disposed && pc.iceConnectionState === "failed") this.restart();
+      if (!this.disposed && pc.iceConnectionState === "failed") this.attemptIceRestart();
     });
 
     if (this.role === "host") {
@@ -174,10 +184,20 @@ export class PeerLink {
     }
   }
 
-  /** Called when signalling comes back after a drop; forces fresh ICE candidates. */
+  /**
+   * Called when the peer is known to be reachable again, so the retry budget starts
+   * over: this is a fresh chance, not a continuation of a losing streak.
+   */
   restart(): void {
+    this.restartAttempts = 0;
+    this.attemptIceRestart();
+  }
+
+  private attemptIceRestart(): void {
     if (this.role !== "host" || !this.pc) return;
     if (this.pc.connectionState === "closed") return;
+    if (this.restartAttempts >= MAX_ICE_RESTARTS) return;
+    this.restartAttempts += 1;
     this.pc.restartIce();
   }
 
