@@ -2,12 +2,28 @@ import { RESUME_GRACE_MS, type Role } from "../../shared/protocol";
 
 const STORAGE_KEY = "gsend.session";
 
+/** Enough to recognise a partially received file again and route its frames. */
+export interface StoredTransfer {
+  id: string;
+  wireId: number;
+  name: string;
+  size: number;
+  mime: string;
+}
+
 export interface StoredSession {
   code: string;
   sessionKey: string;
   role: Role;
   approved: boolean;
   savedAt: number;
+  /** In-flight receives, whose bytes are waiting in the origin-private filesystem. */
+  incoming: StoredTransfer[];
+  /**
+   * In-flight sends. Only the ids: a reloaded page cannot re-read the files anyway,
+   * so these exist purely to tell the other side to stop waiting for them.
+   */
+  outgoing: string[];
 }
 
 /**
@@ -31,6 +47,8 @@ export function loadSession(): StoredSession | null {
 
     const parsed = JSON.parse(raw) as Partial<StoredSession>;
     if (!parsed.code || !parsed.sessionKey || !parsed.role || !parsed.savedAt) return null;
+    parsed.incoming ??= [];
+    parsed.outgoing ??= [];
 
     // The server reaps a session once both peers have been gone this long, so an
     // older record can only lead to a confusing failed resume.

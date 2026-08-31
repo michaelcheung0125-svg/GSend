@@ -22,6 +22,7 @@ const QUOTA_HEADROOM_BYTES = 256 * 1024 * 1024;
 interface WorkerReply {
   seq: number;
   ok: boolean;
+  value?: unknown;
   message?: string;
 }
 
@@ -30,7 +31,7 @@ class OpfsPool {
   private seq = 0;
   private readonly pending = new Map<
     number,
-    { resolve: () => void; reject: (error: Error) => void }
+    { resolve: (value: unknown) => void; reject: (error: Error) => void }
   >();
 
   private ensureWorker(): Worker {
@@ -43,43 +44,51 @@ class OpfsPool {
       const waiter = this.pending.get(event.data.seq);
       if (!waiter) return;
       this.pending.delete(event.data.seq);
-      if (event.data.ok) waiter.resolve();
+      if (event.data.ok) waiter.resolve(event.data.value);
       else waiter.reject(new Error(event.data.message ?? "OPFS write failed"));
     });
     this.worker = worker;
     return worker;
   }
 
-  private request(message: Record<string, unknown>, transfer: Transferable[] = []): Promise<void> {
+  private request(
+    message: Record<string, unknown>,
+    transfer: Transferable[] = [],
+  ): Promise<unknown> {
     const worker = this.ensureWorker();
     const seq = ++this.seq;
-    return new Promise<void>((resolve, reject) => {
+    return new Promise<unknown>((resolve, reject) => {
       this.pending.set(seq, { resolve, reject });
       worker.postMessage({ ...message, seq }, transfer);
     });
   }
 
-  open(id: string): Promise<void> {
-    return this.request({ t: "open", id });
+  async open(id: string): Promise<void> {
+    await this.request({ t: "open", id });
   }
 
-  write(id: string, offset: number, chunk: Uint8Array): Promise<void> {
+  async reopen(id: string): Promise<number> {
+    const size = await this.request({ t: "reopen", id });
+    return typeof size === "number" ? size : 0;
+  }
+
+  async write(id: string, offset: number, chunk: Uint8Array): Promise<void> {
     // The chunk is a view onto the received frame, which the caller reuses, and
     // transferring detaches whatever buffer it points at — so send a copy.
     const copy = new Uint8Array(chunk);
-    return this.request({ t: "write", id, offset, data: copy.buffer }, [copy.buffer]);
+    await this.request({ t: "write", id, offset, data: copy.buffer }, [copy.buffer]);
   }
 
-  finish(id: string): Promise<void> {
-    return this.request({ t: "finish", id });
+  async finish(id: string): Promise<void> {
+    await this.request({ t: "finish", id });
   }
 
-  discard(id: string): Promise<void> {
-    return this.request({ t: "discard", id });
+  async discard(id: string): Promise<void> {
+    await this.request({ t: "discard", id });
   }
 
-  sweep(): Promise<void> {
-    return this.request({ t: "sweep" });
+  async sweep(): Promise<void> {
+    await this.request({ t: "sweep" });
   }
 }
 
@@ -175,6 +184,21 @@ export async function createSink(id: string): Promise<FileSink> {
     }
   }
   return new MemorySink();
+}
+
+/**
+ * Pick a partially received file back up after a reload. The byte count comes from the
+ * file on disk rather than from anything we remembered, so it cannot drift.
+ * Returns null when the file is gone, which means the transfer cannot be resumed.
+ */
+export async function reopenSink(id: string): Promise<{ sink: FileSink; received: number } | null> {
+  if (!(await prepareStorage())) return null;
+  try {
+    const received = await pool.reopen(id);
+    return { sink: new OpfsSink(id), received };
+  } catch {
+    return null;
+  }
 }
 
 // --- limits ----------------------------------------------------------------

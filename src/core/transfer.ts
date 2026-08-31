@@ -6,7 +6,8 @@ import {
   type FileMeta,
   type PeerControl,
 } from "./protocol";
-import { canAccept, createSink, maxFileBytes, type FileSink } from "./sink";
+import type { StoredTransfer } from "./session-store";
+import { canAccept, createSink, maxFileBytes, reopenSink, type FileSink } from "./sink";
 
 /** How much of the source file to pull into memory at a time before framing it. */
 const READ_BLOCK_BYTES = 4 * 1024 * 1024;
@@ -17,6 +18,8 @@ const LOW_WATER_BYTES = 1 * 1024 * 1024;
 
 const ACK_INTERVAL_BYTES = 512 * 1024;
 const ACK_INTERVAL_MS = 250;
+/** Backstop so a stalled channel can never hang the send loop indefinitely. */
+const DRAIN_TIMEOUT_MS = 5_000;
 
 export type TransferStatus = "pending" | "active" | "paused" | "done" | "cancelled" | "error";
 export type Direction = "send" | "receive";
@@ -74,6 +77,8 @@ export interface TransferCallbacks {
   sendControl(msg: PeerControl): boolean;
   onChange(): void;
   onText(msg: TextMessage): void;
+  /** Fired when the set of in-flight transfers changes and is worth persisting. */
+  onTransfersChanged(): void;
 }
 
 export class TransferEngine {
@@ -85,8 +90,72 @@ export class TransferEngine {
   private readonly incoming = new Map<string, IncomingTransfer>();
   /** Binary frames carry the compact wire id, so incoming frames resolve through this. */
   private readonly wireIndex = new Map<number, string>();
+  /** Sends that a reload destroyed; the peer is told to stop waiting once reattached. */
+  private lostOutgoing: string[] = [];
 
   constructor(private readonly callbacks: TransferCallbacks) {}
+
+  /**
+   * Rebuild in-flight receives after a reload. The bytes are still in the
+   * origin-private filesystem, so only the bookkeeping has to come back.
+   */
+  async restore(incoming: StoredTransfer[], lostOutgoing: string[]): Promise<void> {
+    this.lostOutgoing = [...lostOutgoing];
+    const now = Date.now();
+
+    for (const stored of incoming) {
+      const reopened = await reopenSink(stored.id);
+      if (!reopened) continue;
+
+      const meta: FileMeta = {
+        id: stored.id,
+        wireId: stored.wireId,
+        name: stored.name,
+        size: stored.size,
+        mime: stored.mime,
+      };
+
+      this.incoming.set(stored.id, {
+        meta,
+        sink: reopened.sink,
+        received: Math.min(reopened.received, stored.size),
+        status: "paused",
+        startedAt: now,
+        updatedAt: now,
+        lastAckAt: 0,
+        lastAckBytes: 0,
+      });
+      this.wireIndex.set(stored.wireId, stored.id);
+      this.nextWireId = Math.max(this.nextWireId, stored.wireId + 1);
+    }
+
+    this.callbacks.onChange();
+    this.callbacks.onTransfersChanged();
+  }
+
+  persistableIncoming(): StoredTransfer[] {
+    const rows: StoredTransfer[] = [];
+    for (const transfer of this.incoming.values()) {
+      if (transfer.status !== "active" && transfer.status !== "paused") continue;
+      rows.push({
+        id: transfer.meta.id,
+        wireId: transfer.meta.wireId,
+        name: transfer.meta.name,
+        size: transfer.meta.size,
+        mime: transfer.meta.mime,
+      });
+    }
+    return rows;
+  }
+
+  persistableOutgoing(): string[] {
+    const ids: string[] = [];
+    for (const [id, transfer] of this.outgoing) {
+      if (transfer.status === "done" || transfer.status === "cancelled") continue;
+      ids.push(id);
+    }
+    return ids;
+  }
 
   attach(channels: PeerChannels): void {
     this.channels = channels;
@@ -108,6 +177,16 @@ export class TransferEngine {
     }
     this.callbacks.sendControl({ t: "resume", offsets });
 
+    // A reload wiped these sends; the peer would otherwise hold a paused row forever.
+    for (const fileId of this.lostOutgoing) {
+      this.callbacks.sendControl({
+        t: "cancel",
+        fileId,
+        reason: "the sender's page reloaded and cannot re-read the file",
+      });
+    }
+    this.lostOutgoing = [];
+
     this.callbacks.onChange();
   }
 
@@ -127,10 +206,12 @@ export class TransferEngine {
       transfer.status = "cancelled";
       transfer.error = reason;
       transfer.updatedAt = Date.now();
+      this.wireIndex.delete(transfer.meta.wireId);
       void transfer.sink.abort();
     }
 
     this.callbacks.onChange();
+    this.callbacks.onTransfersChanged();
   }
 
   detach(): void {
@@ -156,7 +237,9 @@ export class TransferEngine {
     this.incoming.clear();
     this.wireIndex.clear();
     this.attachWaiters = [];
+    this.lostOutgoing = [];
     this.callbacks.onChange();
+    this.callbacks.onTransfersChanged();
   }
 
   snapshotOutgoing(): TransferView[] {
@@ -226,6 +309,7 @@ export class TransferEngine {
 
     this.callbacks.sendControl({ t: "offer", batchId, files: metas });
     this.callbacks.onChange();
+    this.callbacks.onTransfersChanged();
     return rejected > 0
       ? `${rejected} file(s) skipped: over the ${Math.round(limit / 1024 / 1024)} MB limit.`
       : null;
@@ -250,11 +334,13 @@ export class TransferEngine {
     if (incoming && incoming.status !== "done") {
       incoming.status = "cancelled";
       incoming.updatedAt = Date.now();
+      this.wireIndex.delete(incoming.meta.wireId);
       void incoming.sink.abort();
       this.callbacks.sendControl({ t: "cancel", fileId, reason: "receiver cancelled" });
     }
 
     this.callbacks.onChange();
+    this.callbacks.onTransfersChanged();
   }
 
   handleControl(raw: string): void {
@@ -371,6 +457,7 @@ export class TransferEngine {
 
     this.callbacks.sendControl({ t: "accept", batchId, offsets });
     this.callbacks.onChange();
+    this.callbacks.onTransfersChanged();
   }
 
   private async onAccept(batchId: string, offsets: Record<string, number>): Promise<void> {
@@ -418,10 +505,12 @@ export class TransferEngine {
 
       while (cursor < block.byteLength) {
         if (this.stopped(transfer)) return;
-        if (!this.channels || transfer.awaitingResume) break;
+        // Identity, not just presence: after a reconnect `this.channels` is a different
+        // object and the one captured above is dead.
+        if (this.channels !== channels || transfer.awaitingResume) break;
 
         await this.waitForDrain(channels);
-        if (!this.channels || transfer.awaitingResume) break;
+        if (this.channels !== channels || transfer.awaitingResume) break;
 
         const size = Math.min(channels.maxPayload, block.byteLength - cursor);
         const frame = new Uint8Array(HEADER_BYTES + size);
@@ -442,11 +531,11 @@ export class TransferEngine {
     }
   }
 
+  /** Waits out any number of reconnections rather than abandoning the transfer. */
   private async waitForChannels(): Promise<PeerChannels> {
-    if (this.channels) return this.channels;
-    await new Promise<void>((resolve) => this.attachWaiters.push(resolve));
-    // attach() woke us, so channels are set unless the session was torn down.
-    if (!this.channels) throw new Error("channels unavailable");
+    while (!this.channels) {
+      await new Promise<void>((resolve) => this.attachWaiters.push(resolve));
+    }
     return this.channels;
   }
 
@@ -457,14 +546,27 @@ export class TransferEngine {
     transfer.resumeGate = undefined;
   }
 
+  /**
+   * A closed channel never fires `bufferedamountlow`, so waiting on that alone would
+   * strand the pump on a connection that died mid-block. Closure wakes it too, and the
+   * timeout is a backstop for anything neither event covers.
+   */
   private async waitForDrain(channels: PeerChannels): Promise<void> {
+    if (channels.data.readyState !== "open") return;
     if (channels.data.bufferedAmount <= HIGH_WATER_BYTES) return;
+
     await new Promise<void>((resolve) => {
-      const onLow = () => {
-        channels.data.removeEventListener("bufferedamountlow", onLow);
+      const done = () => {
+        clearTimeout(timer);
+        channels.data.removeEventListener("bufferedamountlow", done);
+        channels.data.removeEventListener("close", done);
+        channels.data.removeEventListener("error", done);
         resolve();
       };
-      channels.data.addEventListener("bufferedamountlow", onLow);
+      const timer = setTimeout(done, DRAIN_TIMEOUT_MS);
+      channels.data.addEventListener("bufferedamountlow", done);
+      channels.data.addEventListener("close", done);
+      channels.data.addEventListener("error", done);
     });
   }
 
@@ -504,6 +606,7 @@ export class TransferEngine {
     transfer.acked = transfer.meta.size;
     transfer.updatedAt = Date.now();
     this.callbacks.onChange();
+    this.callbacks.onTransfersChanged();
   }
 
   private onRemoteCancel(fileId: string, reason: string): void {
@@ -517,9 +620,11 @@ export class TransferEngine {
     if (incoming && incoming.status !== "done") {
       incoming.status = "cancelled";
       incoming.error = reason;
+      this.wireIndex.delete(incoming.meta.wireId);
       void incoming.sink.abort();
     }
     this.callbacks.onChange();
+    this.callbacks.onTransfersChanged();
   }
 
   private maybeAck(fileId: string, transfer: IncomingTransfer): void {
@@ -539,20 +644,24 @@ export class TransferEngine {
       transfer.downloadUrl = URL.createObjectURL(blob);
       transfer.status = "done";
       transfer.updatedAt = Date.now();
+      this.wireIndex.delete(transfer.meta.wireId);
       this.callbacks.sendControl({ t: "done", fileId });
     } catch {
       this.failIncoming(transfer, fileId, "could not assemble the file");
     }
     this.callbacks.onChange();
+    this.callbacks.onTransfersChanged();
   }
 
   private failIncoming(transfer: IncomingTransfer, fileId: string, reason: string): void {
     transfer.status = "error";
     transfer.error = reason;
     transfer.updatedAt = Date.now();
+    this.wireIndex.delete(transfer.meta.wireId);
     void transfer.sink.abort();
     this.callbacks.sendControl({ t: "cancel", fileId, reason });
     this.callbacks.onChange();
+    this.callbacks.onTransfersChanged();
   }
 }
 

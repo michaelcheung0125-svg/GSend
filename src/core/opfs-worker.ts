@@ -19,6 +19,12 @@ interface OpenRequest {
   seq: number;
   id: string;
 }
+/** Reopen a file left behind by a reload, keeping whatever was already written. */
+interface ReopenRequest {
+  t: "reopen";
+  seq: number;
+  id: string;
+}
 interface WriteRequest {
   t: "write";
   seq: number;
@@ -41,7 +47,13 @@ interface SweepRequest {
   seq: number;
 }
 
-type Request = OpenRequest | WriteRequest | FinishRequest | DiscardRequest | SweepRequest;
+type Request =
+  | OpenRequest
+  | ReopenRequest
+  | WriteRequest
+  | FinishRequest
+  | DiscardRequest
+  | SweepRequest;
 
 interface OpenFile {
   handle: FileSystemSyncAccessHandle;
@@ -76,7 +88,7 @@ async function closeFile(id: string, flush: boolean): Promise<void> {
   }
 }
 
-async function handle(request: Request): Promise<void> {
+async function handle(request: Request): Promise<unknown> {
   switch (request.t) {
     case "open": {
       await closeFile(request.id, false);
@@ -85,7 +97,18 @@ async function handle(request: Request): Promise<void> {
       const accessHandle = await fileHandle.createSyncAccessHandle();
       await accessHandle.truncate(0);
       open.set(request.id, { handle: accessHandle, writesSinceFlush: 0 });
-      return;
+      return undefined;
+    }
+
+    case "reopen": {
+      await closeFile(request.id, false);
+      const dir = await incoming();
+      // Throws if the file is gone, which is the caller's signal to give up on it.
+      const fileHandle = await dir.getFileHandle(request.id);
+      const accessHandle = await fileHandle.createSyncAccessHandle();
+      open.set(request.id, { handle: accessHandle, writesSinceFlush: 0 });
+      // The file itself is the record of how much arrived; nothing else is trusted.
+      return await accessHandle.getSize();
     }
 
     case "write": {
@@ -97,12 +120,12 @@ async function handle(request: Request): Promise<void> {
         file.writesSinceFlush = 0;
         await file.handle.flush();
       }
-      return;
+      return undefined;
     }
 
     case "finish": {
       await closeFile(request.id, true);
-      return;
+      return undefined;
     }
 
     case "discard": {
@@ -113,7 +136,7 @@ async function handle(request: Request): Promise<void> {
       } catch {
         /* nothing written yet */
       }
-      return;
+      return undefined;
     }
 
     case "sweep": {
@@ -133,7 +156,7 @@ async function handle(request: Request): Promise<void> {
           /* raced with another sweep */
         }
       }
-      return;
+      return undefined;
     }
   }
 }
@@ -141,7 +164,7 @@ async function handle(request: Request): Promise<void> {
 ctx.addEventListener("message", (event) => {
   const request = event.data;
   void handle(request).then(
-    () => ctx.postMessage({ seq: request.seq, ok: true }),
+    (value) => ctx.postMessage({ seq: request.seq, ok: true, value }),
     (error: unknown) => ctx.postMessage({ seq: request.seq, ok: false, message: String(error) }),
   );
 });

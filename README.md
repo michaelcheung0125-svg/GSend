@@ -115,15 +115,18 @@ it was made over a local network or punched through NAT. No addresses, no timest
 beyond the day, no session identifiers, nothing tied to a person. The totals are public
 at `/api/stats`.
 
-Known gaps, all scheduled:
+**A receiver can reload mid-transfer and carry on.** The bytes are already on disk, and
+the transfer's metadata rides along in `sessionStorage`, so a reloaded page reopens the
+file, asks it how many bytes actually arrived, and tells the sender where to pick up.
+The byte count is read from the file rather than remembered, so it cannot drift.
+Verified by reloading the receiver 19 MB into a 128 MB transfer: it finished byte-exact.
 
-- **A transfer in flight when a peer reloads is cancelled, not resumed.** The received
-  bytes are on disk now, but the transfer's metadata is not yet persisted alongside
-  them, so a reloaded page cannot pick the file back up. Resume across a network blip
-  already works.
-- **A sender cannot resume across its own reload, ever.** A browser will not let a page
-  re-read a file the user picked before a reload, so that side has to re-pick it. This
-  is a platform rule, not a gap to close.
+**A sender cannot resume across its own reload, ever.** A browser will not let a page
+re-read a file the user picked before a reload, so that side has to re-pick it. That is
+a platform rule, not a gap to close, so the reloaded sender tells the other side to stop
+waiting instead of leaving a row stuck at a percentage.
+
+Known gaps, all scheduled:
 - **No TURN server.** If both devices sit behind strict NATs the connection fails with
   a message suggesting the same Wi-Fi. The counts above are what will decide whether
   paying for a relay is warranted.

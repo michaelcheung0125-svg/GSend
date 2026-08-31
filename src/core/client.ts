@@ -114,6 +114,7 @@ export class GSendClient {
         this.texts = [...this.texts, msg];
         this.emitNow();
       },
+      onTransfersChanged: () => this.persist(),
     });
 
     this.installLifecycleHandlers();
@@ -167,7 +168,13 @@ export class GSendClient {
     this.reconnectDeadline = Date.now() + RESUME_GRACE_MS;
     this.persist();
     this.emitNow();
-    this.resumeSignaling();
+
+    // Reopen the partly received files before reconnecting: the offsets we report on
+    // attach come from those files, and an empty report tells the sender to give up.
+    void this.transfer
+      .restore(stored.incoming, stored.outgoing)
+      .finally(() => this.resumeSignaling());
+
     return true;
   }
 
@@ -419,7 +426,12 @@ export class GSendClient {
     this.peer = null;
     this.channelsOpen = false;
     this.connection = "connecting";
-    this.transfer.abortInFlight("the other device reloaded");
+    // Detached explicitly: the discarded link no longer reports its own closure, and
+    // without this the sender would keep its old send offsets instead of waiting for
+    // the peer to say where to pick up.
+    this.transfer.detach();
+    // Transfers are not abandoned here. The reloaded peer reopens its files and reports
+    // where to resume; anything it could not recover it cancels explicitly.
     this.startPeer();
   }
 
@@ -585,6 +597,8 @@ export class GSendClient {
       sessionKey: this.credentials.sessionKey,
       role: this.credentials.role,
       approved: this.approval === "granted",
+      incoming: this.transfer.persistableIncoming(),
+      outgoing: this.transfer.persistableOutgoing(),
     });
   }
 

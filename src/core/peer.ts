@@ -57,6 +57,12 @@ export class PeerLink {
   private ignoreOffer = false;
   private pendingCandidates: RTCIceCandidateInit[] = [];
   private announced = false;
+  /**
+   * Data channel close events can arrive well after close() returns. Once this link is
+   * discarded its events must be ignored, or a stale close would tear down the
+   * replacement connection that has already taken over.
+   */
+  private disposed = false;
 
   /** The impolite side wins offer collisions; the host also drives ICE restarts. */
   private readonly polite: boolean;
@@ -76,12 +82,17 @@ export class PeerLink {
     this.announced = false;
 
     pc.addEventListener("icecandidate", ({ candidate }) => {
-      if (candidate) this.handlers.onSignal({ candidate: candidate.toJSON() });
+      if (this.disposed || !candidate) return;
+      this.handlers.onSignal({ candidate: candidate.toJSON() });
     });
 
-    pc.addEventListener("negotiationneeded", () => void this.negotiate());
+    pc.addEventListener("negotiationneeded", () => {
+      if (this.disposed) return;
+      void this.negotiate();
+    });
 
     pc.addEventListener("connectionstatechange", () => {
+      if (this.disposed) return;
       switch (pc.connectionState) {
         case "connecting":
           this.handlers.onState("connecting");
@@ -103,7 +114,7 @@ export class PeerLink {
     });
 
     pc.addEventListener("iceconnectionstatechange", () => {
-      if (pc.iceConnectionState === "failed") this.restart();
+      if (!this.disposed && pc.iceConnectionState === "failed") this.restart();
     });
 
     if (this.role === "host") {
@@ -192,6 +203,7 @@ export class PeerLink {
   }
 
   close(): void {
+    this.disposed = true;
     this.control?.close();
     this.data?.close();
     this.pc?.close();
@@ -230,7 +242,9 @@ export class PeerLink {
   private attachControl(channel: RTCDataChannel): void {
     this.control = channel;
     channel.addEventListener("message", (event) => {
-      if (typeof event.data === "string") this.handlers.onControlMessage(event.data);
+      if (!this.disposed && typeof event.data === "string") {
+        this.handlers.onControlMessage(event.data);
+      }
     });
     channel.addEventListener("open", () => this.announceIfReady());
     channel.addEventListener("close", () => this.announceLost());
@@ -240,14 +254,16 @@ export class PeerLink {
     channel.binaryType = "arraybuffer";
     this.data = channel;
     channel.addEventListener("message", (event) => {
-      if (event.data instanceof ArrayBuffer) this.handlers.onDataFrame(event.data);
+      if (!this.disposed && event.data instanceof ArrayBuffer) {
+        this.handlers.onDataFrame(event.data);
+      }
     });
     channel.addEventListener("open", () => this.announceIfReady());
     channel.addEventListener("close", () => this.announceLost());
   }
 
   private announceIfReady(): void {
-    if (this.announced) return;
+    if (this.disposed || this.announced) return;
     if (this.control?.readyState !== "open" || this.data?.readyState !== "open") return;
 
     this.announced = true;
@@ -259,7 +275,7 @@ export class PeerLink {
   }
 
   private announceLost(): void {
-    if (!this.announced) return;
+    if (this.disposed || !this.announced) return;
     this.announced = false;
     this.handlers.onChannelsLost();
   }
