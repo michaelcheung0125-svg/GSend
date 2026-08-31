@@ -464,10 +464,12 @@ export class TransferEngine {
       // Only this side knows how much room it has, so the refusal belongs here rather
       // than on the sender, which cannot see the receiving device's storage.
       if (!(await canAccept(meta.size))) {
+        // Naming the limit makes a wrong refusal self-diagnosing instead of a mystery.
+        const limit = Math.round(maxFileBytes() / 1024 / 1024);
         this.callbacks.sendControl({
           t: "cancel",
           fileId: meta.id,
-          reason: "too large for the receiving device",
+          reason: `the receiving device cannot take a file this large (limit ${limit} MB)`,
         });
         continue;
       }

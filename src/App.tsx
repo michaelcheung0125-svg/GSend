@@ -4,6 +4,7 @@ import Landing from "./ui/Landing";
 import HostPanel from "./ui/HostPanel";
 import PairingPanel from "./ui/PairingPanel";
 import TransferPanel from "./ui/TransferPanel";
+import { prepareStorage } from "./core/sink";
 
 const client = new GSendClient();
 
@@ -22,6 +23,10 @@ export default function App() {
   useEffect(() => {
     if (autoJoinHandled) return;
     autoJoinHandled = true;
+
+    // Settle the storage probe here rather than on the landing screen, which never
+    // renders when someone arrives by QR code or link.
+    void prepareStorage();
 
     // A fresh code in the URL is an explicit request to join, so it outranks whatever
     // session this tab was in before.

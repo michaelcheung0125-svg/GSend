@@ -238,8 +238,11 @@ export function maxFileBytes(): number {
 
 /** Whether this device can plausibly take a file of this size right now. */
 export async function canAccept(size: number): Promise<boolean> {
+  // Must settle before reading the limit: until the probe runs the answer defaults to
+  // the memory ceiling, which would refuse files this device can comfortably take.
+  const disk = await prepareStorage();
   if (size > maxFileBytes()) return false;
-  if (!diskAvailable) return true;
+  if (!disk) return true;
 
   try {
     const { quota, usage } = await navigator.storage.estimate();

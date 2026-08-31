@@ -178,3 +178,14 @@ Q12/Q21 當時決定「Chrome 1GB、Safari 200MB」,依據是「iOS Safari 每�
 
 因此 Safari 不需要特別降級,全平台統一 1GB。真正需要降級的情況不是「Safari」,
 而是「OPFS 不可用」(主要是無痕模式),那時退回 256MB 的記憶體路徑。
+
+### 2026-08-31 修正:QR 加入時檔案上限錯誤
+
+真機回報:Safari 收 285MB 檔案被拒,顯示 "too large for the receiving device"。
+
+原因是儲存能力探測 `prepareStorage()` 只在 Landing 畫面被呼叫,而**透過 QR code 或連結加入時
+Landing 根本不會渲染**。於是接收端檢查大小時,`diskAvailable` 仍是未知狀態,
+`maxFileBytes()` 保守地退回 256MB 的記憶體上限,285MB 就被判定超標。
+
+修正:大小檢查前先等探測完成;探測改在應用啟動時就發動,不再依賴特定畫面;
+拒絕訊息改為附上實際上限,讓下次若再誤判能直接看出是哪個數字在作用。
