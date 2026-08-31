@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { GSendClient, Snapshot } from "../core/client";
-import { MAX_FILE_BYTES, formatBytes } from "../core/sink";
+import { formatBytes, maxFileBytes, prepareStorage } from "../core/sink";
 
 interface Props {
   client: GSendClient;
@@ -10,10 +10,22 @@ interface Props {
 
 export default function Landing({ client, state, prefill }: Props) {
   const [code, setCode] = useState(prefill);
+  const [limit, setLimit] = useState(() => maxFileBytes());
 
   useEffect(() => {
     if (prefill) setCode(prefill);
   }, [prefill]);
+
+  // The ceiling depends on whether this browser will actually give us disk.
+  useEffect(() => {
+    let cancelled = false;
+    void prepareStorage().then(() => {
+      if (!cancelled) setLimit(maxFileBytes());
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
@@ -24,7 +36,7 @@ export default function Landing({ client, state, prefill }: Props) {
     <section className="card card--centered">
       <h1 className="card__title">Move files between your devices</h1>
       <p className="muted">
-        One code, one direct connection. Up to {formatBytes(MAX_FILE_BYTES)} per file.
+        One code, one direct connection. Up to {formatBytes(limit)} per file.
       </p>
 
       {state.error && <p className="alert">{state.error}</p>}

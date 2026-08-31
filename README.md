@@ -102,17 +102,35 @@ the client retries for the same five minutes the server keeps the room open. Mob
 Safari needs this because it closes the signalling socket and suspends WebRTC when a
 tab goes to the background, and a bfcache restore does not reliably report it.
 
+**Received files stream to disk**, not into tab memory: a dedicated worker writes each
+chunk into the origin-private filesystem through a sync access handle, which is the one
+OPFS write path available on every target (Chrome 102, Chrome Android 109, Firefox 111,
+Safari and iOS Safari 15.2). The limit is 1 GB per file, dropping to 256 MB only where
+OPFS is unusable, such as Safari private browsing. The receiving side refuses a file it
+does not have room for, since only it can see its own storage.
+
+**Anonymous connection counts** are recorded so the TURN question can be settled with
+evidence: one record per session saying whether a direct connection worked and whether
+it was made over a local network or punched through NAT. No addresses, no timestamps
+beyond the day, no session identifiers, nothing tied to a person. The totals are public
+at `/api/stats`.
+
 Known gaps, all scheduled:
 
-- **File size is capped at 256 MB (200 MB on Safari)** because received bytes are held
-  in memory. M2 swaps in streaming sinks (File System Access on Chromium desktop, OPFS
-  elsewhere) to reach the 1 GB target.
-- **A transfer in flight when a peer reloads is cancelled, not resumed.** The receiver's
-  buffered bytes die with the page, so both halves stop with a message. Resume across a
-  reload needs the streaming sinks above; resume across a network blip already works.
+- **A transfer in flight when a peer reloads is cancelled, not resumed.** The received
+  bytes are on disk now, but the transfer's metadata is not yet persisted alongside
+  them, so a reloaded page cannot pick the file back up. Resume across a network blip
+  already works.
+- **A sender cannot resume across its own reload, ever.** A browser will not let a page
+  re-read a file the user picked before a reload, so that side has to re-pick it. This
+  is a platform rule, not a gap to close.
 - **No TURN server.** If both devices sit behind strict NATs the connection fails with
-  a message suggesting the same Wi-Fi. M2/M3 measure how often that actually happens
-  before deciding whether to pay for a relay.
+  a message suggesting the same Wi-Fi. The counts above are what will decide whether
+  paying for a relay is warranted.
+- **`showSaveFilePicker()` is not used yet.** On Chromium desktop and Chrome Android it
+  would let a large file stream straight to the user's chosen location instead of being
+  handed over as a blob afterwards. Safari and Firefox have no picker, so the blob path
+  has to exist regardless.
 - No PWA install, no i18n toggle yet — both scheduled after M1.
 
 See `PLAN.md` for the full roadmap and the decisions behind it.

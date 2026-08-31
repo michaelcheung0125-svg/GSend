@@ -6,7 +6,7 @@ import {
   type FileMeta,
   type PeerControl,
 } from "./protocol";
-import { MAX_FILE_BYTES, createSink, type FileSink } from "./sink";
+import { canAccept, createSink, maxFileBytes, type FileSink } from "./sink";
 
 /** How much of the source file to pull into memory at a time before framing it. */
 const READ_BLOCK_BYTES = 4 * 1024 * 1024;
@@ -191,10 +191,13 @@ export class TransferEngine {
   }
 
   sendFiles(files: File[]): string | null {
-    const accepted = files.filter((file) => file.size <= MAX_FILE_BYTES);
+    const limit = maxFileBytes();
+    const accepted = files.filter((file) => file.size <= limit);
     const rejected = files.length - accepted.length;
     if (accepted.length === 0) {
-      return rejected > 0 ? `Files above ${Math.round(MAX_FILE_BYTES / 1024 / 1024)} MB are not supported yet.` : null;
+      return rejected > 0
+        ? `Files above ${Math.round(limit / 1024 / 1024)} MB are not supported yet.`
+        : null;
     }
 
     const batchId = randomId();
@@ -224,7 +227,7 @@ export class TransferEngine {
     this.callbacks.sendControl({ t: "offer", batchId, files: metas });
     this.callbacks.onChange();
     return rejected > 0
-      ? `${rejected} file(s) skipped: over the ${Math.round(MAX_FILE_BYTES / 1024 / 1024)} MB limit.`
+      ? `${rejected} file(s) skipped: over the ${Math.round(limit / 1024 / 1024)} MB limit.`
       : null;
   }
 
@@ -264,7 +267,7 @@ export class TransferEngine {
 
     switch (msg.t) {
       case "offer":
-        this.onOffer(msg.batchId, msg.files);
+        void this.onOffer(msg.batchId, msg.files);
         break;
       case "accept":
         void this.onAccept(msg.batchId, msg.offsets);
@@ -312,11 +315,14 @@ export class TransferEngine {
     if (skip >= payload.byteLength) return;
 
     const slice = payload.subarray(skip);
+    const writeAt = transfer.received;
     transfer.status = "active";
     transfer.received += slice.byteLength;
     transfer.updatedAt = Date.now();
 
-    void transfer.sink.write(slice).catch(() => this.failIncoming(transfer, fileId, "write failed"));
+    void transfer.sink
+      .write(writeAt, slice)
+      .catch(() => this.failIncoming(transfer, fileId, "could not write to storage"));
 
     if (transfer.received >= transfer.meta.size) {
       void this.completeIncoming(fileId, transfer);
@@ -327,7 +333,7 @@ export class TransferEngine {
     this.callbacks.onChange();
   }
 
-  private onOffer(batchId: string, files: FileMeta[]): void {
+  private async onOffer(batchId: string, files: FileMeta[]): Promise<void> {
     const now = Date.now();
     const offsets: Record<string, number> = {};
 
@@ -337,9 +343,21 @@ export class TransferEngine {
         offsets[meta.id] = existing.received;
         continue;
       }
+
+      // Only this side knows how much room it has, so the refusal belongs here rather
+      // than on the sender, which cannot see the receiving device's storage.
+      if (!(await canAccept(meta.size))) {
+        this.callbacks.sendControl({
+          t: "cancel",
+          fileId: meta.id,
+          reason: "too large for the receiving device",
+        });
+        continue;
+      }
+
       this.incoming.set(meta.id, {
         meta,
-        sink: createSink(),
+        sink: await createSink(meta.id),
         received: 0,
         status: "active",
         startedAt: now,

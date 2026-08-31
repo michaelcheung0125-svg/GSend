@@ -1,21 +1,120 @@
 /**
  * Where received bytes land while a transfer is in flight.
  *
- * M1 buffers in memory, which is why the ceiling below is well under the 1 GB the
- * plan promises. M2 adds streaming sinks (File System Access on Chromium desktop,
- * OPFS elsewhere) behind this same interface and raises the limit.
+ * The default path streams straight to the origin-private filesystem through a worker,
+ * so the ceiling is disk rather than tab memory. Memory is only the fallback for
+ * contexts where OPFS is unavailable (Safari private browsing, most notably).
  */
 export interface FileSink {
-  write(chunk: Uint8Array): Promise<void>;
+  write(offset: number, chunk: Uint8Array): Promise<void>;
   finish(mime: string): Promise<Blob>;
   abort(): Promise<void>;
 }
 
-export class MemorySink implements FileSink {
+const DIRECTORY = "incoming";
+const MEMORY_LIMIT_BYTES = 256 * 1024 * 1024;
+const DISK_LIMIT_BYTES = 1024 * 1024 * 1024;
+/** Refuse a file unless the origin reports at least this much headroom beyond it. */
+const QUOTA_HEADROOM_BYTES = 256 * 1024 * 1024;
+
+// --- worker plumbing -------------------------------------------------------
+
+interface WorkerReply {
+  seq: number;
+  ok: boolean;
+  message?: string;
+}
+
+class OpfsPool {
+  private worker: Worker | null = null;
+  private seq = 0;
+  private readonly pending = new Map<
+    number,
+    { resolve: () => void; reject: (error: Error) => void }
+  >();
+
+  private ensureWorker(): Worker {
+    if (this.worker) return this.worker;
+
+    const worker = new Worker(new URL("./opfs-worker.ts", import.meta.url), {
+      type: "module",
+    });
+    worker.addEventListener("message", (event: MessageEvent<WorkerReply>) => {
+      const waiter = this.pending.get(event.data.seq);
+      if (!waiter) return;
+      this.pending.delete(event.data.seq);
+      if (event.data.ok) waiter.resolve();
+      else waiter.reject(new Error(event.data.message ?? "OPFS write failed"));
+    });
+    this.worker = worker;
+    return worker;
+  }
+
+  private request(message: Record<string, unknown>, transfer: Transferable[] = []): Promise<void> {
+    const worker = this.ensureWorker();
+    const seq = ++this.seq;
+    return new Promise<void>((resolve, reject) => {
+      this.pending.set(seq, { resolve, reject });
+      worker.postMessage({ ...message, seq }, transfer);
+    });
+  }
+
+  open(id: string): Promise<void> {
+    return this.request({ t: "open", id });
+  }
+
+  write(id: string, offset: number, chunk: Uint8Array): Promise<void> {
+    // The chunk is a view onto the received frame, which the caller reuses, and
+    // transferring detaches whatever buffer it points at — so send a copy.
+    const copy = new Uint8Array(chunk);
+    return this.request({ t: "write", id, offset, data: copy.buffer }, [copy.buffer]);
+  }
+
+  finish(id: string): Promise<void> {
+    return this.request({ t: "finish", id });
+  }
+
+  discard(id: string): Promise<void> {
+    return this.request({ t: "discard", id });
+  }
+
+  sweep(): Promise<void> {
+    return this.request({ t: "sweep" });
+  }
+}
+
+const pool = new OpfsPool();
+
+// --- sinks -----------------------------------------------------------------
+
+class OpfsSink implements FileSink {
+  constructor(private readonly id: string) {}
+
+  async write(offset: number, chunk: Uint8Array): Promise<void> {
+    await pool.write(this.id, offset, chunk);
+  }
+
+  async finish(mime: string): Promise<Blob> {
+    await pool.finish(this.id);
+
+    const root = await navigator.storage.getDirectory();
+    const dir = await root.getDirectoryHandle(DIRECTORY, { create: true });
+    const file = await (await dir.getFileHandle(this.id)).getFile();
+
+    // Re-wrapping keeps the blob backed by the file on disk rather than copying it
+    // into memory, which matters on iOS where large in-memory blobs crash the tab.
+    return mime ? new Blob([file], { type: mime }) : file;
+  }
+
+  async abort(): Promise<void> {
+    await pool.discard(this.id).catch(() => undefined);
+  }
+}
+
+class MemorySink implements FileSink {
   private parts: Uint8Array[] = [];
 
-  async write(chunk: Uint8Array): Promise<void> {
-    // The chunk is a view onto the received frame, which is recycled; copy it.
+  async write(_offset: number, chunk: Uint8Array): Promise<void> {
     this.parts.push(new Uint8Array(chunk));
   }
 
@@ -28,19 +127,76 @@ export class MemorySink implements FileSink {
   }
 }
 
-export function createSink(): FileSink {
+let diskAvailable: boolean | null = null;
+
+function opfsPresent(): boolean {
+  return (
+    typeof Worker !== "undefined" &&
+    typeof navigator !== "undefined" &&
+    typeof navigator.storage?.getDirectory === "function"
+  );
+}
+
+/**
+ * Probes once by actually opening a file: feature detection alone cannot tell whether
+ * `createSyncAccessHandle` will work here, and Safari private browsing has OPFS
+ * present but unusable.
+ */
+export async function prepareStorage(): Promise<boolean> {
+  if (diskAvailable !== null) return diskAvailable;
+  if (!opfsPresent()) {
+    diskAvailable = false;
+    return false;
+  }
+
+  try {
+    const probe = `probe-${Math.random().toString(36).slice(2)}`;
+    await pool.open(probe);
+    await pool.discard(probe);
+    diskAvailable = true;
+    // Exempts us from least-recently-used eviction. It does not raise the quota, and
+    // on Safari it also holds off the seven-day no-interaction cleanup.
+    void navigator.storage.persist?.().catch(() => undefined);
+    void pool.sweep().catch(() => undefined);
+  } catch {
+    diskAvailable = false;
+  }
+
+  return diskAvailable;
+}
+
+export async function createSink(id: string): Promise<FileSink> {
+  if (await prepareStorage()) {
+    try {
+      await pool.open(id);
+      return new OpfsSink(id);
+    } catch {
+      /* fall through to memory */
+    }
+  }
   return new MemorySink();
 }
 
-const SAFARI_LIMIT_BYTES = 200 * 1024 * 1024;
-const DEFAULT_LIMIT_BYTES = 256 * 1024 * 1024;
+// --- limits ----------------------------------------------------------------
 
-function isWebKit(): boolean {
-  const ua = navigator.userAgent;
-  return /AppleWebKit/.test(ua) && !/Chrome|Chromium|Edg\//.test(ua);
+export function maxFileBytes(): number {
+  return diskAvailable ? DISK_LIMIT_BYTES : MEMORY_LIMIT_BYTES;
 }
 
-export const MAX_FILE_BYTES = isWebKit() ? SAFARI_LIMIT_BYTES : DEFAULT_LIMIT_BYTES;
+/** Whether this device can plausibly take a file of this size right now. */
+export async function canAccept(size: number): Promise<boolean> {
+  if (size > maxFileBytes()) return false;
+  if (!diskAvailable) return true;
+
+  try {
+    const { quota, usage } = await navigator.storage.estimate();
+    if (quota === undefined || usage === undefined) return true;
+    // Reported quota is padded and approximate, so leave real headroom on top.
+    return quota - usage > size + QUOTA_HEADROOM_BYTES;
+  } catch {
+    return true;
+  }
+}
 
 export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
