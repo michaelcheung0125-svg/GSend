@@ -66,6 +66,14 @@ export default function HostPanel({ client, state }: Props) {
 
       {qr && <img className="qr" src={qr} alt={t("host.qrAlt")} width={220} height={220} />}
 
+      {state.pendingShare && (
+        <p className="alert alert--soft">
+          {state.pendingShare.files > 0
+            ? t("host.sharePendingFiles", { count: state.pendingShare.files })
+            : t("host.sharePendingText")}
+        </p>
+      )}
+
       {state.shareUrl && (
         <button type="button" className="btn btn--ghost link-copy" onClick={copy}>
           {copied ? t("host.linkCopied") : state.shareUrl.replace(/^https?:\/\//, "")}

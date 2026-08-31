@@ -11,7 +11,7 @@
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
     // Signalling must reach the Worker even though the SPA fallback matches everything.
-    "run_worker_first": ["/api/*"]
+    "run_worker_first": ["/api/*", "/share"]
   },
   "durable_objects": {
     "bindings": [

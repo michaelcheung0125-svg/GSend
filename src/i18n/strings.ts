@@ -35,6 +35,9 @@ export const en = {
   "host.qrAlt": "QR code for this session",
   "host.linkCopied": "Link copied",
   "host.cancel": "Cancel",
+  "host.sharePendingFiles":
+    "{count} shared file(s) will go as soon as the other device connects.",
+  "host.sharePendingText": "Shared text will go as soon as the other device connects.",
 
   "pairing.deviceConnected": "A device connected",
   "pairing.approvePrompt":
@@ -139,6 +142,8 @@ export const zh: Record<MessageKey, string> = {
   "host.qrAlt": "這個連線的 QR code",
   "host.linkCopied": "已複製連結",
   "host.cancel": "取消",
+  "host.sharePendingFiles": "已分享的 {count} 個檔案會在另一台裝置連上後送出。",
+  "host.sharePendingText": "已分享的文字會在另一台裝置連上後送出。",
 
   "pairing.deviceConnected": "有一台裝置已連線",
   "pairing.approvePrompt": "只有在這是你自己、或你正在等待的人時才繼續。你按下同意之前不會送出任何東西。",

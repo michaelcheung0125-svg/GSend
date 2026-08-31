@@ -12,6 +12,10 @@ export default {
     const url = new URL(request.url);
 
     if (url.pathname === "/api/ws") return openSocket(request, env, url);
+    // Only reached when no service worker is installed to intercept it; without this
+    // the asset server answers a share POST with a bare 405.
+    if (url.pathname === "/share") return Response.redirect(new URL("/", url).toString(), 303);
+
     if (url.pathname === "/api/health") return Response.json({ ok: true });
 
     // Public on purpose: these are anonymous counts with nothing to protect, and

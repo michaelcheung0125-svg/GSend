@@ -39,6 +39,8 @@ export interface Snapshot {
   outgoing: TransferView[];
   incoming: TransferView[];
   texts: TextMessage[];
+  /** Files handed over by the share sheet, waiting for a peer to connect. */
+  pendingShare: { files: number; text: boolean } | null;
   notice: Message | null;
   error: Message | null;
 }
@@ -81,6 +83,8 @@ export class GSendClient {
   private approval: Approval = "pending";
   private channelsOpen = false;
   private texts: TextMessage[] = [];
+  private pendingFiles: File[] = [];
+  private pendingText: string | null = null;
   private notice: Message | null = null;
   private error: Message | null = null;
 
@@ -179,12 +183,41 @@ export class GSendClient {
     return true;
   }
 
+  /**
+   * Take files from the system share sheet. Sharing to GSend is a statement of intent,
+   * so an idle app opens a session immediately and shows the code; the files then go
+   * the moment the other device is approved.
+   */
+  stageShared(files: File[], text: string | null): void {
+    if (this.phase === "idle") this.host();
+
+    // Set after host(), which resets the session and would otherwise clear these.
+    this.pendingFiles = files;
+    this.pendingText = text;
+    this.flushPendingShare();
+    this.emitNow();
+  }
+
+  private flushPendingShare(): void {
+    if (this.approval !== "granted") return;
+
+    if (this.pendingFiles.length > 0) {
+      this.notice = this.transfer.sendFiles(this.pendingFiles);
+      this.pendingFiles = [];
+    }
+    if (this.pendingText !== null) {
+      this.transfer.sendText(this.pendingText);
+      this.pendingText = null;
+    }
+  }
+
   approve(): void {
     if (this.role !== "host" || this.approval !== "pending") return;
     this.peer?.sendControl(JSON.stringify({ t: "approve" }));
     this.approval = "granted";
     this.phase = "active";
     this.persist();
+    this.flushPendingShare();
     this.emitNow();
   }
 
@@ -512,6 +545,7 @@ export class GSendClient {
       this.approval = "granted";
       this.phase = "active";
       this.persist();
+      this.flushPendingShare();
       this.emitNow();
       return;
     }
@@ -607,6 +641,8 @@ export class GSendClient {
     this.approval = "pending";
     this.channelsOpen = false;
     this.texts = [];
+    this.pendingFiles = [];
+    this.pendingText = null;
     this.notice = null;
     this.error = null;
     this.closedByUser = false;
@@ -680,6 +716,10 @@ export class GSendClient {
       outgoing: this.transfer.snapshotOutgoing(),
       incoming: this.transfer.snapshotIncoming(),
       texts: this.texts,
+      pendingShare:
+        this.pendingFiles.length > 0 || this.pendingText
+          ? { files: this.pendingFiles.length, text: this.pendingText !== null }
+          : null,
       notice: this.notice,
       error: this.error,
     };

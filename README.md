@@ -147,6 +147,11 @@ header. Because the two devices may be reading different languages, a stopped tr
 travels as a code rather than a sentence and is phrased by whoever is looking at the
 screen — cancel from an English device and the Chinese one says 傳送方已取消.
 
+**Shareable from the system.** An installed copy appears in Android's share sheet.
+Sharing to GSend opens a session and shows the code straight away, holding the files
+until the other device is approved — a share is a statement of intent, so it should not
+land on an empty screen. Chromium only: Safari has no share target.
+
 **A privacy page** at [/privacy](https://gsend.cc/privacy) sets out exactly what the
 server handles, what it never receives, what stays on your device, and who else is
 involved (the host, and the STUN servers that see an IP address during connection
@@ -160,9 +165,6 @@ Known gaps, all scheduled:
   would let a large file stream straight to the user's chosen location instead of being
   handed over as a blob afterwards. Safari and Firefox have no picker, so the blob path
   has to exist regardless.
-- **No share target yet.** An installed copy cannot yet appear in Android's "share to"
-  sheet; that needs the service worker to receive the shared files and hold them until a
-  session is paired.
 - **Cancelling a large transfer takes a few seconds to reach the other side.** Control
   messages ride a separate channel, but they share one congestion-controlled transport
   with the bytes already queued, so a cancel waits behind them. The sender stops

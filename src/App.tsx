@@ -1,5 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { GSendClient } from "./core/client";
+import { collectShare } from "./core/share";
 import { prepareStorage } from "./core/sink";
 import { useI18n } from "./i18n";
 import Landing from "./ui/Landing";
@@ -29,6 +30,16 @@ export default function App() {
     // Settle the storage probe here rather than on the landing screen, which never
     // renders when someone arrives by QR code or link.
     void prepareStorage();
+
+    // Arriving from the system share sheet outranks everything: the person picked this
+    // app in order to send something specific.
+    if (new URLSearchParams(location.search).has("shared")) {
+      history.replaceState(null, "", location.pathname);
+      void collectShare().then((payload) => {
+        if (payload) client.stageShared(payload.files, payload.text);
+      });
+      return;
+    }
 
     // A fresh code in the URL is an explicit request to join, so it outranks whatever
     // session this tab was in before.
