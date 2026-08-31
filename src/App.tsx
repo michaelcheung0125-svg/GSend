@@ -88,6 +88,9 @@ export default function App() {
 
       <footer className="app__footer">
         <span>Direct browser-to-browser transfer. Files never touch a server.</span>
+        <a className="app__footer-link" href="/privacy">
+          Privacy
+        </a>
       </footer>
     </div>
   );

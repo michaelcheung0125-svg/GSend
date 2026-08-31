@@ -11,3 +11,13 @@ createRoot(container).render(
     <App />
   </StrictMode>,
 );
+
+// Only in production: in development it would sit between Vite and the page and defeat
+// hot reloading.
+if (import.meta.env.PROD && "serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    void navigator.serviceWorker.register("/sw.js").catch(() => {
+      /* installability is a bonus, never a requirement */
+    });
+  });
+}

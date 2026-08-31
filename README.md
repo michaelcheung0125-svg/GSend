@@ -131,6 +131,18 @@ re-read a file the user picked before a reload, so that side has to re-pick it. 
 a platform rule, not a gap to close, so the reloaded sender tells the other side to stop
 waiting instead of leaving a row stuck at a percentage.
 
+**Installable.** A web app manifest and a small service worker make GSend addable to a
+home screen or installed from the address bar. On iOS this matters beyond the icon: an
+installed copy gets its own storage treatment instead of sharing Safari's, which is
+where received files wait to be saved. The worker is deliberately narrow — documents
+always come from the network, and only content-hashed build assets are served from
+cache — so an installed copy can never get stuck on an old version.
+
+**A privacy page** at [/privacy](https://gsend.cc/privacy) sets out exactly what the
+server handles, what it never receives, what stays on your device, and who else is
+involved (the host, and the STUN servers that see an IP address during connection
+setup). In English and Traditional Chinese.
+
 Known gaps, all scheduled:
 - **No TURN server.** If both devices sit behind strict NATs the connection fails with
   a message suggesting the same Wi-Fi. The counts above are what will decide whether
@@ -139,7 +151,10 @@ Known gaps, all scheduled:
   would let a large file stream straight to the user's chosen location instead of being
   handed over as a blob afterwards. Safari and Firefox have no picker, so the blob path
   has to exist regardless.
-- No PWA install, no i18n toggle yet — both scheduled after M1.
+- **No share target yet.** An installed copy cannot yet appear in Android's "share to"
+  sheet; that needs the service worker to receive the shared files and hold them until a
+  session is paired.
+- No in-app language toggle yet — the interface is English, the privacy page is bilingual.
 
 See `PLAN.md` for the full roadmap and the decisions behind it.
 

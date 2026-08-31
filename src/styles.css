@@ -79,10 +79,25 @@ body {
 }
 
 .app__footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px 14px;
+  flex-wrap: wrap;
   padding: 20px 0 28px;
   font-size: 13px;
   color: var(--muted);
   text-align: center;
+}
+
+.app__footer-link {
+  color: var(--muted);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.app__footer-link:hover {
+  color: var(--text);
 }
 
 .brand {

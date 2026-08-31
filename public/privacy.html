@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Privacy — GSend</title>
+    <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png" />
+    <style>
+      :root {
+        --bg: #f6f7f9;
+        --surface: #ffffff;
+        --border: #dfe3e8;
+        --text: #16191d;
+        --muted: #656d78;
+        --accent: #2f6df6;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #101317;
+          --surface: #181c22;
+          --border: #2c333c;
+          --text: #e8ebef;
+          --muted: #9099a5;
+          --accent: #5b8cff;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 0 16px 64px;
+        background: var(--bg);
+        color: var(--text);
+        font-family: system-ui, -apple-system, "Segoe UI", "Noto Sans TC", sans-serif;
+        line-height: 1.65;
+      }
+      main {
+        max-width: 680px;
+        margin: 0 auto;
+      }
+      header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 18px 0;
+        font-weight: 650;
+        font-size: 17px;
+      }
+      header a {
+        color: inherit;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+      }
+      header img {
+        width: 20px;
+        height: 20px;
+        border-radius: 6px;
+      }
+      h1 {
+        font-size: 26px;
+        letter-spacing: -0.02em;
+        margin: 12px 0 4px;
+      }
+      h2 {
+        font-size: 18px;
+        letter-spacing: -0.01em;
+        margin: 32px 0 8px;
+      }
+      p,
+      li {
+        font-size: 15.5px;
+      }
+      .updated {
+        color: var(--muted);
+        font-size: 14px;
+        margin-top: 0;
+      }
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 4px 20px 20px;
+        margin-top: 20px;
+      }
+      ul {
+        padding-left: 20px;
+      }
+      li {
+        margin: 6px 0;
+      }
+      a {
+        color: var(--accent);
+      }
+      hr {
+        border: 0;
+        border-top: 1px solid var(--border);
+        margin: 40px 0;
+      }
+      code {
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 5px;
+        padding: 1px 5px;
+        font-size: 0.9em;
+      }
+      footer {
+        margin-top: 40px;
+        color: var(--muted);
+        font-size: 14px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <a href="/"><img src="/icon-192.png" alt="" />GSend</a>
+      </header>
+
+      <h1>Privacy</h1>
+      <p class="updated">Last updated 1 September 2026</p>
+
+      <div class="card">
+        <h2>The short version</h2>
+        <p>
+          Your files and messages go straight from one device to the other. They are not
+          uploaded, not relayed, and not stored. The server's only job is to introduce the
+          two devices to each other, and it is deliberately built so that it could not read
+          your files even if it wanted to.
+        </p>
+        <p>
+          There are no accounts, no cookies, no analytics and no third-party trackers.
+        </p>
+      </div>
+
+      <h2>What the server handles</h2>
+      <ul>
+        <li>
+          <strong>The 4-digit code</strong> and a random session key, held only while the
+          session is alive. A code stops being joinable after 60 seconds or as soon as one
+          device uses it.
+        </li>
+        <li>
+          <strong>Connection setup messages</strong> (the technical description of how the two
+          browsers should reach each other) passed between the two devices and not kept.
+        </li>
+        <li>
+          <strong>Your IP address</strong>, used to count join attempts for one minute so that
+          nobody can guess their way into someone else's code. It is not written down and the
+          counter is discarded automatically.
+        </li>
+        <li>
+          <strong>One anonymous number per session</strong>: whether a direct connection worked,
+          and whether it was made over a local network or through a firewall. There is no
+          address, no timestamp beyond the date, and nothing that ties it to a person or a
+          session. The running totals are public at
+          <a href="/api/stats">/api/stats</a>.
+        </li>
+      </ul>
+      <p>
+        Session records are deleted when the session ends, five minutes after both devices
+        disappear, or after an hour of silence — whichever comes first.
+      </p>
+
+      <h2>What the server never receives</h2>
+      <ul>
+        <li>The contents of your files.</li>
+        <li>The names, sizes or types of your files.</li>
+        <li>The text you send through the message box.</li>
+      </ul>
+      <p>
+        These travel over a direct, encrypted connection between the two browsers. There is no
+        relay server in this project, so if a direct connection cannot be made, the transfer
+        fails rather than falling back to sending your data through us.
+      </p>
+
+      <h2>What stays on your device</h2>
+      <ul>
+        <li>
+          <strong>The session code and key</strong>, in your browser's per-tab storage, so a
+          reload or a phone locking its screen does not lose the session. Closing the tab
+          clears it.
+        </li>
+        <li>
+          <strong>Received files</strong>, written into private browser storage while they
+          arrive and kept there until you save them. Unclaimed files are cleaned up after a
+          day, and clearing your browser's site data removes them immediately.
+        </li>
+      </ul>
+
+      <h2>Who else is involved</h2>
+      <ul>
+        <li>
+          <strong>Cloudflare</strong> hosts this site and the signalling server, and sees the
+          ordinary request information any web host sees.
+        </li>
+        <li>
+          <strong>STUN servers run by Cloudflare and Google</strong> are asked, during connection
+          setup, how your device appears from the outside. This tells them your IP address. It
+          is how a direct connection between two networks is possible at all; no file data ever
+          passes through them.
+        </li>
+      </ul>
+
+      <h2>Checking any of this</h2>
+      <p>
+        The whole thing is open source under the MIT licence at
+        <a href="https://github.com/michaelcheung0125-svg/GSend">github.com/michaelcheung0125-svg/GSend</a>.
+        The server is a single small file, and you are welcome to read it rather than take this
+        page's word for it.
+      </p>
+
+      <hr />
+
+      <h1>隱私說明</h1>
+      <p class="updated">最後更新:2026 年 9 月 1 日</p>
+
+      <div class="card">
+        <h2>簡短版本</h2>
+        <p>
+          你的檔案和訊息是從一台裝置直接傳到另一台,不會上傳、不經中轉、不被儲存。
+          伺服器唯一的工作是讓兩台裝置認識彼此,而且它的設計讓它就算想看也讀不到你的檔案。
+        </p>
+        <p>沒有帳號、沒有 cookie、沒有分析工具、沒有第三方追蹤。</p>
+      </div>
+
+      <h2>伺服器會經手什麼</h2>
+      <ul>
+        <li>
+          <strong>4 位數字碼</strong>與一組隨機 session 金鑰,只在連線存續期間保留。
+          數字碼在 60 秒後、或一有裝置使用後就無法再被加入。
+        </li>
+        <li><strong>連線建立訊息</strong>(描述兩個瀏覽器如何找到彼此的技術資訊),轉交後不保留。</li>
+        <li>
+          <strong>你的 IP 位址</strong>,用來在一分鐘內計算加入次數,防止有人靠猜測闖入別人的數字碼。
+          它不會被寫下來,計數器會自動丟棄。
+        </li>
+        <li>
+          <strong>每次連線一個匿名數字</strong>:直連是否成功、是走區域網路還是穿透防火牆。
+          不含位址、不含日期以外的時間、沒有任何能對應到個人或特定連線的東西。
+          累計數字公開於 <a href="/api/stats">/api/stats</a>。
+        </li>
+      </ul>
+      <p>連線紀錄會在結束時、雙方離開五分鐘後、或閒置一小時後刪除,以先到者為準。</p>
+
+      <h2>伺服器永遠收不到什麼</h2>
+      <ul>
+        <li>你的檔案內容。</li>
+        <li>檔案的名稱、大小或類型。</li>
+        <li>你透過訊息框傳送的文字。</li>
+      </ul>
+      <p>
+        這些都走兩個瀏覽器之間的直接加密連線。這個專案沒有中轉伺服器,
+        所以當直連無法建立時,傳輸會失敗,而不是改成把你的資料經由我們送出。
+      </p>
+
+      <h2>留在你裝置上的東西</h2>
+      <ul>
+        <li>
+          <strong>連線代碼與金鑰</strong>,存在瀏覽器的分頁層級儲存空間,
+          讓重新整理或手機鎖螢幕不會弄丟連線。關閉分頁即清除。
+        </li>
+        <li>
+          <strong>收到的檔案</strong>,接收過程中寫入瀏覽器的私有儲存空間,在你儲存之前一直保留。
+          未取用的檔案會在一天後清理,清除瀏覽器網站資料則會立即移除。
+        </li>
+      </ul>
+
+      <h2>還有誰參與其中</h2>
+      <ul>
+        <li><strong>Cloudflare</strong> 提供本站與信令伺服器的代管,會看到任何網站主機都會看到的一般請求資訊。</li>
+        <li>
+          <strong>Cloudflare 與 Google 的 STUN 伺服器</strong>會在建立連線時被詢問你的裝置從外部看起來是什麼樣子,
+          這會讓它們得知你的 IP 位址。這是跨網路直連得以成立的前提;沒有任何檔案資料經過它們。
+        </li>
+      </ul>
+
+      <h2>如何自行查證</h2>
+      <p>
+        整個專案以 MIT 授權開源於
+        <a href="https://github.com/michaelcheung0125-svg/GSend">github.com/michaelcheung0125-svg/GSend</a>。
+        伺服器只有一個很小的檔案,你可以自己讀,不必只聽這一頁怎麼說。
+      </p>
+
+      <footer><a href="/">← Back to GSend</a></footer>
+    </main>
+  </body>
+</html>

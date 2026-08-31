@@ -10,7 +10,8 @@
     "check": "tsc -b",
     "preview": "vite preview",
     "deploy": "vite build && wrangler deploy",
-    "cf-typegen": "wrangler types"
+    "cf-typegen": "wrangler types",
+    "icons": "node scripts/make-icons.mjs"
   },
   "dependencies": {
     "qrcode": "^1.5.4",
