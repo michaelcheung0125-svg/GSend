@@ -10,6 +10,28 @@ export const HEADER_BYTES = 16;
 
 export const FRAME_CHUNK = 1;
 
+/**
+ * Why a transfer stopped, as a code rather than a sentence. The two devices may be
+ * reading the interface in different languages, so the wording has to be chosen by
+ * whoever is looking at the screen, not by whoever sent the message.
+ */
+export type CancelCode =
+  | "sender-cancelled"
+  | "receiver-cancelled"
+  | "sender-reloaded"
+  | "too-large"
+  | "peer-lost"
+  | "write-failed"
+  | "assemble-failed"
+  | "stream-gap"
+  | "read-failed";
+
+/** A stopped transfer, ready to be phrased in whichever language is on screen. */
+export interface TransferProblem {
+  code: CancelCode;
+  limit?: number;
+}
+
 export interface FileMeta {
   id: string;
   /** Compact id used in the binary header, unique within a session. */
@@ -29,7 +51,7 @@ export type PeerControl =
   /** Receiver's durable watermark; doubles as the resume point. */
   | { t: "ack"; fileId: string; received: number }
   | { t: "done"; fileId: string }
-  | { t: "cancel"; fileId: string; reason: string }
+  | { t: "cancel"; fileId: string; reason: CancelCode; limit?: number }
   /** Sent after a reconnect so the sender knows where to pick each file up. */
   | { t: "resume"; offsets: Record<string, number> }
   | { t: "text"; id: string; body: string; at: number };

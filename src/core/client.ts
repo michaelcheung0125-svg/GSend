@@ -1,12 +1,13 @@
 import {
-  ERROR_TEXT,
   RESUME_GRACE_MS,
   isValidCode,
   type ConnectionOutcome,
   type ConnectionPath,
   type Role,
+  type ServerErrorCode,
   type ServerMessage,
 } from "../../shared/protocol";
+import type { Message } from "../i18n/strings";
 import { PeerLink, type PeerChannels, type PeerState } from "./peer";
 import { clearSession, loadSession, saveSession } from "./session-store";
 import { Signaling } from "./signaling";
@@ -38,8 +39,8 @@ export interface Snapshot {
   outgoing: TransferView[];
   incoming: TransferView[];
   texts: TextMessage[];
-  notice: string | null;
-  error: string | null;
+  notice: Message | null;
+  error: Message | null;
 }
 
 const PROGRESS_THROTTLE_MS = 40;
@@ -80,8 +81,8 @@ export class GSendClient {
   private approval: Approval = "pending";
   private channelsOpen = false;
   private texts: TextMessage[] = [];
-  private notice: string | null = null;
-  private error: string | null = null;
+  private notice: Message | null = null;
+  private error: Message | null = null;
 
   private closedByUser = false;
   private reconnectAttempt = 0;
@@ -140,7 +141,7 @@ export class GSendClient {
 
   join(code: string): void {
     if (!isValidCode(code)) {
-      this.error = "Enter the 4 digits shown on the other device.";
+      this.error = { key: "error.badCode" };
       this.emitNow();
       return;
     }
@@ -190,7 +191,7 @@ export class GSendClient {
   reject(): void {
     if (this.role !== "host") return;
     this.peer?.sendControl(JSON.stringify({ t: "reject" }));
-    this.end("You declined the connection.");
+    this.end({ key: "error.declinedByYou" });
   }
 
   sendFiles(files: File[]): void {
@@ -246,15 +247,15 @@ export class GSendClient {
         break;
 
       case "code-expired":
-        this.end("Nobody joined in time. Start a new session.");
+        this.end({ key: "error.nobodyJoined" });
         break;
 
       case "closed":
-        this.end(`Session closed: ${msg.reason}`);
+        this.end({ key: "error.sessionClosed", params: { reason: msg.reason } });
         break;
 
       case "error":
-        this.onServerError(msg.code, msg.message);
+        this.onServerError(msg.code);
         break;
     }
   }
@@ -292,15 +293,15 @@ export class GSendClient {
     this.emitNow();
   }
 
-  private onServerError(code: string, message: string): void {
+  private onServerError(code: ServerErrorCode): void {
     const wasPaired = this.phase === "active" || this.phase === "pairing";
     const expired = code === "code_not_found" || code === "bad_key" || code === "session_full";
 
     this.closedByUser = true;
-    this.error =
-      wasPaired && expired
-        ? "The session expired while this page was away. Start a new one."
-        : (ERROR_TEXT[code as keyof typeof ERROR_TEXT] ?? message);
+    // Mid-session these all mean the same thing to a person: the room is gone.
+    this.error = wasPaired && expired
+      ? { key: "error.expiredWhileAway" }
+      : { key: `server.${code}` as const };
     this.phase = this.phase === "joining" ? "idle" : "ended";
     clearSession();
     this.emitNow();
@@ -313,14 +314,14 @@ export class GSendClient {
     if (code >= 4000 && code < 4100) return;
 
     if (!this.credentials) {
-      this.end("Lost the connection to the server.");
+      this.end({ key: "error.serverLost" });
       return;
     }
 
     const now = Date.now();
     if (this.reconnectDeadline === null) this.reconnectDeadline = now + RESUME_GRACE_MS;
     if (now >= this.reconnectDeadline) {
-      this.end("Lost the connection to the server.");
+      this.end({ key: "error.serverLost" });
       return;
     }
 
@@ -401,7 +402,7 @@ export class GSendClient {
     this.peerTimer = setTimeout(() => {
       this.peerTimer = null;
       if (this.peerPresent) return;
-      this.end("The other device left and did not come back.");
+      this.end({ key: "error.peerGone" });
     }, RESUME_GRACE_MS);
 
     this.emitNow();
@@ -516,7 +517,7 @@ export class GSendClient {
     }
 
     if (msg.t === "reject") {
-      this.end("The other device declined the connection.");
+      this.end({ key: "error.declinedByPeer" });
       return;
     }
 
@@ -568,7 +569,7 @@ export class GSendClient {
 
   // --- lifecycle -----------------------------------------------------------
 
-  private end(reason: string | null): void {
+  private end(reason: Message | null): void {
     this.phase = "ended";
     this.error = reason;
     this.peerPresent = false;

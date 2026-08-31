@@ -142,6 +142,11 @@ where received files wait to be saved. The worker is deliberately narrow — doc
 always come from the network, and only content-hashed build assets are served from
 cache — so an installed copy can never get stuck on an old version.
 
+**English and Traditional Chinese**, detected from the browser and switchable from the
+header. Because the two devices may be reading different languages, a stopped transfer
+travels as a code rather than a sentence and is phrased by whoever is looking at the
+screen — cancel from an English device and the Chinese one says 傳送方已取消.
+
 **A privacy page** at [/privacy](https://gsend.cc/privacy) sets out exactly what the
 server handles, what it never receives, what stays on your device, and who else is
 involved (the host, and the STUN servers that see an IP address during connection
@@ -158,7 +163,10 @@ Known gaps, all scheduled:
 - **No share target yet.** An installed copy cannot yet appear in Android's "share to"
   sheet; that needs the service worker to receive the shared files and hold them until a
   session is paired.
-- No in-app language toggle yet — the interface is English, the privacy page is bilingual.
+- **Cancelling a large transfer takes a few seconds to reach the other side.** Control
+  messages ride a separate channel, but they share one congestion-controlled transport
+  with the bytes already queued, so a cancel waits behind them. The sender stops
+  immediately; the receiver's row catches up shortly after.
 
 See `PLAN.md` for the full roadmap and the decisions behind it.
 

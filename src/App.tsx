@@ -1,10 +1,11 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { GSendClient } from "./core/client";
+import { prepareStorage } from "./core/sink";
+import { useI18n } from "./i18n";
 import Landing from "./ui/Landing";
 import HostPanel from "./ui/HostPanel";
 import PairingPanel from "./ui/PairingPanel";
 import TransferPanel from "./ui/TransferPanel";
-import { prepareStorage } from "./core/sink";
 
 const client = new GSendClient();
 
@@ -18,6 +19,7 @@ function readCodeFromUrl(): string {
 
 export default function App() {
   const state = useSyncExternalStore(client.subscribe, client.getSnapshot);
+  const { t, tm, toggle } = useI18n();
   const [prefill, setPrefill] = useState("");
 
   useEffect(() => {
@@ -41,6 +43,9 @@ export default function App() {
     client.restore();
   }, []);
 
+  const unlocked = state.approval === "granted";
+  const pairing = state.phase === "joining" || state.phase === "pairing";
+
   return (
     <div className="app">
       <header className="app__header">
@@ -48,16 +53,26 @@ export default function App() {
           type="button"
           className="brand"
           onClick={() => client.reset()}
-          aria-label="Back to start"
+          aria-label={t("app.back")}
         >
           <span className="brand__mark" aria-hidden="true" />
           GSend
         </button>
-        {state.phase !== "idle" && (
-          <button type="button" className="btn btn--ghost" onClick={() => client.leave()}>
-            End session
+        <div className="row">
+          <button
+            type="button"
+            className="btn btn--ghost btn--tiny"
+            onClick={toggle}
+            title={t("app.language")}
+          >
+            {t("app.languageShort")}
           </button>
-        )}
+          {state.phase !== "idle" && (
+            <button type="button" className="btn btn--ghost" onClick={() => client.leave()}>
+              {t("app.endSession")}
+            </button>
+          )}
+        </div>
       </header>
 
       <main className="app__main">
@@ -65,31 +80,30 @@ export default function App() {
         {(state.phase === "creating" || state.phase === "hosting") && (
           <HostPanel client={client} state={state} />
         )}
-        {(state.phase === "joining" || state.phase === "pairing") &&
-          state.approval !== "granted" && <PairingPanel client={client} state={state} />}
+        {pairing && !unlocked && <PairingPanel client={client} state={state} />}
         {/*
           Once the session is unlocked the panel stays up even while the connection is
           degraded. A received file lives in this list until it is saved, so hiding it
           on a dropped connection loses the file.
         */}
-        {(state.phase === "active" ||
-          ((state.phase === "pairing" || state.phase === "joining") &&
-            state.approval === "granted")) && <TransferPanel client={client} state={state} />}
+        {(state.phase === "active" || (pairing && unlocked)) && (
+          <TransferPanel client={client} state={state} />
+        )}
         {state.phase === "ended" && (
           <section className="card card--centered">
-            <h1 className="card__title">Session ended</h1>
-            <p className="muted">{state.error ?? "The session is closed."}</p>
+            <h1 className="card__title">{t("ended.title")}</h1>
+            <p className="muted">{tm(state.error) ?? t("ended.default")}</p>
             <button type="button" className="btn btn--primary" onClick={() => client.reset()}>
-              Start over
+              {t("ended.startOver")}
             </button>
           </section>
         )}
       </main>
 
       <footer className="app__footer">
-        <span>Direct browser-to-browser transfer. Files never touch a server.</span>
+        <span>{t("app.footer")}</span>
         <a className="app__footer-link" href="/privacy">
-          Privacy
+          {t("app.privacy")}
         </a>
       </footer>
     </div>

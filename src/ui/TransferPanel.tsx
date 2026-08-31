@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import type { GSendClient, Snapshot } from "../core/client";
 import { formatBytes } from "../core/sink";
 import type { TransferView } from "../core/transfer";
+import { useI18n, type Translator } from "../i18n";
 
 interface Props {
   client: GSendClient;
@@ -9,6 +10,8 @@ interface Props {
 }
 
 export default function TransferPanel({ client, state }: Props) {
+  const i18n = useI18n();
+  const { t, tm } = i18n;
   const fileInput = useRef<HTMLInputElement>(null);
   const [draft, setDraft] = useState("");
   const [dragging, setDragging] = useState(false);
@@ -31,11 +34,11 @@ export default function TransferPanel({ client, state }: Props) {
 
   return (
     <section className="panel">
-      <ConnectionBar state={state} />
+      <ConnectionBar state={state} i18n={i18n} />
 
       {state.notice && (
         <p className="alert alert--soft" onClick={() => client.dismissNotice()}>
-          {state.notice}
+          {tm(state.notice)}
         </p>
       )}
 
@@ -52,13 +55,13 @@ export default function TransferPanel({ client, state }: Props) {
           pick(event.dataTransfer.files);
         }}
       >
-        <p className="dropzone__hint">Drop files here</p>
+        <p className="dropzone__hint">{t("transfer.dropHere")}</p>
         <button
           type="button"
           className="btn btn--primary"
           onClick={() => fileInput.current?.click()}
         >
-          Choose files
+          {t("transfer.chooseFiles")}
         </button>
         <input
           ref={fileInput}
@@ -74,11 +77,11 @@ export default function TransferPanel({ client, state }: Props) {
           className="composer__input"
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
-          placeholder="Send text or a link"
-          aria-label="Text to send"
+          placeholder={t("transfer.textPlaceholder")}
+          aria-label={t("transfer.textLabel")}
         />
         <button type="submit" className="btn" disabled={!draft.trim()}>
-          Send
+          {t("transfer.send")}
         </button>
       </form>
 
@@ -95,7 +98,7 @@ export default function TransferPanel({ client, state }: Props) {
                   className="btn btn--tiny"
                   onClick={() => void navigator.clipboard.writeText(message.body).catch(() => {})}
                 >
-                  Copy
+                  {t("transfer.copy")}
                 </button>
               </li>
             ))}
@@ -105,7 +108,7 @@ export default function TransferPanel({ client, state }: Props) {
       {transfers.length > 0 && (
         <ul className="transfers">
           {transfers.map((transfer) => (
-            <TransferRow key={transfer.id} transfer={transfer} client={client} />
+            <TransferRow key={transfer.id} transfer={transfer} client={client} i18n={i18n} />
           ))}
         </ul>
       )}
@@ -113,17 +116,17 @@ export default function TransferPanel({ client, state }: Props) {
   );
 }
 
-function ConnectionBar({ state }: { state: Snapshot }) {
+function ConnectionBar({ state, i18n }: { state: Snapshot; i18n: Translator }) {
   const online = state.connection === "connected" && state.channelsOpen;
   const label = online
-    ? "Connected"
+    ? i18n.t("status.connected")
     : state.peerAbsentSince !== null && !state.channelsOpen
-      ? "The other device dropped off — waiting for it to come back"
+      ? i18n.t("status.peerAway")
       : state.connection === "reconnecting"
-        ? "Reconnecting…"
+        ? i18n.t("status.reconnecting")
         : state.connection === "failed"
-          ? "Connection lost"
-          : "Connecting…";
+          ? i18n.t("status.lost")
+          : i18n.t("status.connecting");
 
   return (
     <div className={online ? "status status--ok" : "status status--warn"}>
@@ -133,7 +136,15 @@ function ConnectionBar({ state }: { state: Snapshot }) {
   );
 }
 
-function TransferRow({ transfer, client }: { transfer: TransferView; client: GSendClient }) {
+function TransferRow({
+  transfer,
+  client,
+  i18n,
+}: {
+  transfer: TransferView;
+  client: GSendClient;
+  i18n: Translator;
+}) {
   const percent = transfer.size > 0 ? Math.min(100, (transfer.transferred / transfer.size) * 100) : 0;
   const active = transfer.status === "active" || transfer.status === "pending";
 
@@ -157,10 +168,10 @@ function TransferRow({ transfer, client }: { transfer: TransferView; client: GSe
       </div>
 
       <div className="transfer__foot">
-        <span className="muted">{describe(transfer, percent)}</span>
+        <span className="muted">{describe(transfer, percent, i18n)}</span>
         {transfer.status === "done" && transfer.downloadUrl && (
           <a className="btn btn--tiny" href={transfer.downloadUrl} download={transfer.name}>
-            Save
+            {i18n.t("transfer.save")}
           </a>
         )}
         {active && (
@@ -169,7 +180,7 @@ function TransferRow({ transfer, client }: { transfer: TransferView; client: GSe
             className="btn btn--tiny"
             onClick={() => client.cancelTransfer(transfer.id)}
           >
-            Cancel
+            {i18n.t("transfer.cancel")}
           </button>
         )}
       </div>
@@ -177,19 +188,28 @@ function TransferRow({ transfer, client }: { transfer: TransferView; client: GSe
   );
 }
 
-function describe(transfer: TransferView, percent: number): string {
+function describe(transfer: TransferView, percent: number, { t }: Translator): string {
+  // A stopped transfer carries a code rather than a sentence, because the device that
+  // stopped it may be running a different language from the one reading this.
+  const problem = transfer.problem
+    ? t(`cancel.${transfer.problem.code}`, { limit: transfer.problem.limit ?? 0 })
+    : null;
+
   switch (transfer.status) {
     case "done":
-      return transfer.direction === "send" ? "Sent" : "Received";
+      return transfer.direction === "send" ? t("row.sent") : t("row.received");
     case "cancelled":
-      return transfer.error ?? "Cancelled";
+      return problem ?? t("row.cancelled");
     case "error":
-      return transfer.error ?? "Failed";
+      return problem ?? t("row.failed");
     case "paused":
-      return "Paused — waiting to reconnect";
+      return t("row.paused");
     case "pending":
-      return "Waiting for the other device";
+      return t("row.pending");
     default:
-      return `${Math.floor(percent)}% · ${formatBytes(transfer.transferred)}`;
+      return t("row.progress", {
+        percent: Math.floor(percent),
+        transferred: formatBytes(transfer.transferred),
+      });
   }
 }

@@ -1,4 +1,5 @@
 import type { GSendClient, Snapshot } from "../core/client";
+import { useI18n } from "../i18n";
 
 interface Props {
   client: GSendClient;
@@ -6,22 +7,24 @@ interface Props {
 }
 
 export default function PairingPanel({ client, state }: Props) {
+  const { t } = useI18n();
   const hostDeciding = state.role === "host" && state.channelsOpen && state.approval === "pending";
 
   if (hostDeciding) {
     return (
       <section className="card card--centered">
-        <h1 className="card__title">A device connected</h1>
-        <p className="muted">
-          Only continue if this was you or someone you are expecting. Nothing is sent until you
-          approve.
-        </p>
+        <h1 className="card__title">{t("pairing.deviceConnected")}</h1>
+        <p className="muted">{t("pairing.approvePrompt")}</p>
         <div className="row">
-          <button type="button" className="btn btn--primary btn--lg" onClick={() => client.approve()}>
-            Approve
+          <button
+            type="button"
+            className="btn btn--primary btn--lg"
+            onClick={() => client.approve()}
+          >
+            {t("pairing.approve")}
           </button>
           <button type="button" className="btn btn--danger btn--lg" onClick={() => client.reject()}>
-            Decline
+            {t("pairing.decline")}
           </button>
         </div>
       </section>
@@ -32,24 +35,25 @@ export default function PairingPanel({ client, state }: Props) {
   const waitingForPeer = state.peerAbsentSince !== null && !state.channelsOpen;
 
   const message = waitingForPeer
-    ? "The other device dropped off. It has a few minutes to come back before this session closes."
+    ? t("pairing.waitingBody")
     : state.role === "guest" && state.channelsOpen
-      ? "Waiting for the other device to approve."
-      : "Connecting to the other device…";
+      ? t("pairing.waitingApproval")
+      : t("pairing.connectingBody");
+
+  const title = waitingForPeer
+    ? t("pairing.waitingTitle")
+    : state.channelsOpen
+      ? t("pairing.almostThere")
+      : t("pairing.connecting");
 
   return (
     <section className="card card--centered">
       <h1 className="card__title">
         <span className="spinner" aria-hidden="true" />
-        {waitingForPeer ? "Waiting for the other device" : state.channelsOpen ? "Almost there" : "Connecting"}
+        {title}
       </h1>
       <p className="muted">{message}</p>
-      {state.connection === "failed" && (
-        <p className="alert">
-          Could not open a direct connection on this network. Put both devices on the same Wi-Fi and
-          try again.
-        </p>
-      )}
+      {state.connection === "failed" && <p className="alert">{t("pairing.noDirectRoute")}</p>}
     </section>
   );
 }

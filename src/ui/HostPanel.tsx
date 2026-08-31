@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import QRCode from "qrcode";
 import type { GSendClient, Snapshot } from "../core/client";
+import { useI18n } from "../i18n";
 
 interface Props {
   client: GSendClient;
@@ -8,6 +9,7 @@ interface Props {
 }
 
 export default function HostPanel({ client, state }: Props) {
+  const { t } = useI18n();
   const [qr, setQr] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const remaining = useCountdown(state.joinExpiresAt);
@@ -39,18 +41,18 @@ export default function HostPanel({ client, state }: Props) {
   if (state.phase === "creating") {
     return (
       <section className="card card--centered">
-        <h1 className="card__title">Creating a session…</h1>
-        <p className="muted">Reserving a code.</p>
+        <h1 className="card__title">{t("host.creating")}</h1>
+        <p className="muted">{t("host.reserving")}</p>
       </section>
     );
   }
 
   return (
     <section className="card card--centered">
-      <h1 className="card__title">On the other device</h1>
-      <p className="muted">Open this site and enter the code, or scan the square.</p>
+      <h1 className="card__title">{t("host.title")}</h1>
+      <p className="muted">{t("host.subtitle")}</p>
 
-      <div className="code-display" aria-label={`Code ${state.code}`}>
+      <div className="code-display" aria-label={t("host.codeLabel", { code: state.code ?? "" })}>
         {(state.code ?? "").split("").map((digit, index) => (
           <span key={index} className="code-display__digit">
             {digit}
@@ -59,19 +61,19 @@ export default function HostPanel({ client, state }: Props) {
       </div>
 
       <p className={remaining <= 10 ? "countdown countdown--urgent" : "countdown"}>
-        {remaining > 0 ? `Expires in ${remaining}s` : "Expired"}
+        {remaining > 0 ? t("host.expiresIn", { seconds: remaining }) : t("host.expired")}
       </p>
 
-      {qr && <img className="qr" src={qr} alt="QR code for this session" width={220} height={220} />}
+      {qr && <img className="qr" src={qr} alt={t("host.qrAlt")} width={220} height={220} />}
 
       {state.shareUrl && (
         <button type="button" className="btn btn--ghost link-copy" onClick={copy}>
-          {copied ? "Link copied" : state.shareUrl.replace(/^https?:\/\//, "")}
+          {copied ? t("host.linkCopied") : state.shareUrl.replace(/^https?:\/\//, "")}
         </button>
       )}
 
       <button type="button" className="btn" onClick={() => client.reset()}>
-        Cancel
+        {t("host.cancel")}
       </button>
     </section>
   );

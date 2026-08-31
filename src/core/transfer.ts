@@ -3,9 +3,12 @@ import {
   HEADER_BYTES,
   decodeHeader,
   encodeHeader,
+  type CancelCode,
   type FileMeta,
   type PeerControl,
+  type TransferProblem,
 } from "./protocol";
+import type { Message } from "../i18n/strings";
 import type { StoredTransfer } from "./session-store";
 import {
   canAccept,
@@ -40,7 +43,7 @@ export interface TransferView {
   transferred: number;
   status: TransferStatus;
   direction: Direction;
-  error?: string;
+  problem?: TransferProblem;
   downloadUrl?: string;
   startedAt: number;
   updatedAt: number;
@@ -60,7 +63,7 @@ interface OutgoingTransfer {
   sent: number;
   acked: number;
   status: TransferStatus;
-  error?: string;
+  problem?: TransferProblem;
   startedAt: number;
   updatedAt: number;
   /** Set when the channels dropped: the sender must not resume until the receiver reports its offset. */
@@ -73,7 +76,7 @@ interface IncomingTransfer {
   sink: FileSink;
   received: number;
   status: TransferStatus;
-  error?: string;
+  problem?: TransferProblem;
   downloadUrl?: string;
   startedAt: number;
   updatedAt: number;
@@ -213,36 +216,12 @@ export class TransferEngine {
       this.callbacks.sendControl({
         t: "cancel",
         fileId,
-        reason: "the sender's page reloaded and cannot re-read the file",
+        reason: "sender-reloaded",
       });
     }
     this.lostOutgoing = [];
 
     this.callbacks.onChange();
-  }
-
-  /** Both halves of every in-flight transfer are unrecoverable; stop them cleanly. */
-  abortInFlight(reason: string): void {
-    for (const transfer of this.outgoing.values()) {
-      if (transfer.status === "done" || transfer.status === "cancelled") continue;
-      transfer.status = "cancelled";
-      transfer.error = reason;
-      transfer.awaitingResume = false;
-      transfer.updatedAt = Date.now();
-      transfer.resumeGate?.();
-    }
-
-    for (const transfer of this.incoming.values()) {
-      if (transfer.status === "done" || transfer.status === "cancelled") continue;
-      transfer.status = "cancelled";
-      transfer.error = reason;
-      transfer.updatedAt = Date.now();
-      this.wireIndex.delete(transfer.meta.wireId);
-      void transfer.sink.abort();
-    }
-
-    this.callbacks.onChange();
-    this.callbacks.onTransfersChanged();
   }
 
   detach(): void {
@@ -282,7 +261,7 @@ export class TransferEngine {
       transferred: t.sent,
       status: t.status,
       direction: "send" as const,
-      error: t.error,
+      problem: t.problem,
       startedAt: t.startedAt,
       updatedAt: t.updatedAt,
     }));
@@ -297,21 +276,20 @@ export class TransferEngine {
       transferred: t.received,
       status: t.status,
       direction: "receive" as const,
-      error: t.error,
+      problem: t.problem,
       downloadUrl: t.downloadUrl,
       startedAt: t.startedAt,
       updatedAt: t.updatedAt,
     }));
   }
 
-  sendFiles(files: File[]): string | null {
+  sendFiles(files: File[]): Message | null {
     const limit = maxFileBytes();
+    const limitMb = Math.round(limit / 1024 / 1024);
     const accepted = files.filter((file) => file.size <= limit);
     const rejected = files.length - accepted.length;
     if (accepted.length === 0) {
-      return rejected > 0
-        ? `Files above ${Math.round(limit / 1024 / 1024)} MB are not supported yet.`
-        : null;
+      return rejected > 0 ? { key: "notice.allTooLarge", params: { limit: limitMb } } : null;
     }
 
     const batchId = randomId();
@@ -342,7 +320,7 @@ export class TransferEngine {
     this.callbacks.onChange();
     this.callbacks.onTransfersChanged();
     return rejected > 0
-      ? `${rejected} file(s) skipped: over the ${Math.round(limit / 1024 / 1024)} MB limit.`
+      ? { key: "notice.skipped", params: { count: rejected, limit: limitMb } }
       : null;
   }
 
@@ -358,7 +336,7 @@ export class TransferEngine {
       outgoing.status = "cancelled";
       outgoing.updatedAt = Date.now();
       outgoing.resumeGate?.();
-      this.callbacks.sendControl({ t: "cancel", fileId, reason: "sender cancelled" });
+      this.callbacks.sendControl({ t: "cancel", fileId, reason: "sender-cancelled" });
     }
 
     const incoming = this.incoming.get(fileId);
@@ -367,7 +345,7 @@ export class TransferEngine {
       incoming.updatedAt = Date.now();
       this.wireIndex.delete(incoming.meta.wireId);
       void incoming.sink.abort();
-      this.callbacks.sendControl({ t: "cancel", fileId, reason: "receiver cancelled" });
+      this.callbacks.sendControl({ t: "cancel", fileId, reason: "receiver-cancelled" });
     }
 
     this.callbacks.onChange();
@@ -396,7 +374,7 @@ export class TransferEngine {
         this.onRemoteDone(msg.fileId);
         break;
       case "cancel":
-        this.onRemoteCancel(msg.fileId, msg.reason);
+        this.onRemoteCancel(msg.fileId, { code: msg.reason, limit: msg.limit });
         break;
       case "resume":
         this.onResume(msg.offsets);
@@ -426,7 +404,7 @@ export class TransferEngine {
     // where the overlap is data we already hold.
     const skip = transfer.received - header.offset;
     if (skip < 0) {
-      this.failIncoming(transfer, fileId, "stream gap");
+      this.failIncoming(transfer, fileId, "stream-gap");
       return;
     }
     if (skip >= payload.byteLength) return;
@@ -439,7 +417,7 @@ export class TransferEngine {
 
     void transfer.sink
       .write(writeAt, slice)
-      .catch(() => this.failIncoming(transfer, fileId, "could not write to storage"));
+      .catch(() => this.failIncoming(transfer, fileId, "write-failed"));
 
     if (transfer.received >= transfer.meta.size) {
       void this.completeIncoming(fileId, transfer);
@@ -466,11 +444,7 @@ export class TransferEngine {
       if (!(await canAccept(meta.size))) {
         // Naming the limit makes a wrong refusal self-diagnosing instead of a mystery.
         const limit = Math.round(maxFileBytes() / 1024 / 1024);
-        this.callbacks.sendControl({
-          t: "cancel",
-          fileId: meta.id,
-          reason: `the receiving device cannot take a file this large (limit ${limit} MB)`,
-        });
+        this.callbacks.sendControl({ t: "cancel", fileId: meta.id, reason: "too-large", limit });
         continue;
       }
 
@@ -528,7 +502,7 @@ export class TransferEngine {
         block = await transfer.file.slice(transfer.sent, blockEnd).arrayBuffer();
       } catch {
         transfer.status = "error";
-        transfer.error = "could not read the file";
+        transfer.problem = { code: "read-failed" };
         this.callbacks.onChange();
         return;
       }
@@ -611,7 +585,7 @@ export class TransferEngine {
       if (offset === undefined) {
         // The receiver no longer knows about this file (it reloaded); stop sending it.
         transfer.status = "cancelled";
-        transfer.error = "the other device lost this transfer";
+        transfer.problem = { code: "peer-lost" };
       } else {
         transfer.sent = offset;
         transfer.acked = offset;
@@ -642,17 +616,17 @@ export class TransferEngine {
     this.callbacks.onTransfersChanged();
   }
 
-  private onRemoteCancel(fileId: string, reason: string): void {
+  private onRemoteCancel(fileId: string, problem: TransferProblem): void {
     const outgoing = this.outgoing.get(fileId);
     if (outgoing && outgoing.status !== "done") {
       outgoing.status = "cancelled";
-      outgoing.error = reason;
+      outgoing.problem = problem;
       outgoing.resumeGate?.();
     }
     const incoming = this.incoming.get(fileId);
     if (incoming && incoming.status !== "done") {
       incoming.status = "cancelled";
-      incoming.error = reason;
+      incoming.problem = problem;
       this.wireIndex.delete(incoming.meta.wireId);
       void incoming.sink.abort();
     }
@@ -680,19 +654,19 @@ export class TransferEngine {
       this.wireIndex.delete(transfer.meta.wireId);
       this.callbacks.sendControl({ t: "done", fileId });
     } catch {
-      this.failIncoming(transfer, fileId, "could not assemble the file");
+      this.failIncoming(transfer, fileId, "assemble-failed");
     }
     this.callbacks.onChange();
     this.callbacks.onTransfersChanged();
   }
 
-  private failIncoming(transfer: IncomingTransfer, fileId: string, reason: string): void {
+  private failIncoming(transfer: IncomingTransfer, fileId: string, code: CancelCode): void {
     transfer.status = "error";
-    transfer.error = reason;
+    transfer.problem = { code };
     transfer.updatedAt = Date.now();
     this.wireIndex.delete(transfer.meta.wireId);
     void transfer.sink.abort();
-    this.callbacks.sendControl({ t: "cancel", fileId, reason });
+    this.callbacks.sendControl({ t: "cancel", fileId, reason: code });
     this.callbacks.onChange();
     this.callbacks.onTransfersChanged();
   }
