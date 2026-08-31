@@ -28,6 +28,13 @@ const ICE_SERVERS: RTCIceServer[] = [
 const MAX_PAYLOAD_BYTES = 60 * 1024;
 const MIN_PAYLOAD_BYTES = 16 * 1024;
 
+/**
+ * ICE reports "disconnected" for a momentary gap in packets and usually recovers on its
+ * own, so announcing it straight away makes a healthy transfer look broken. Only a gap
+ * that outlasts this is worth telling anyone about.
+ */
+const DISCONNECT_GRACE_MS = 4_000;
+
 export type PeerState = "new" | "connecting" | "connected" | "reconnecting" | "failed" | "closed";
 
 export interface PeerChannels {
@@ -63,6 +70,7 @@ export class PeerLink {
    * replacement connection that has already taken over.
    */
   private disposed = false;
+  private disconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
   /** The impolite side wins offer collisions; the host also drives ICE restarts. */
   private readonly polite: boolean;
@@ -98,10 +106,11 @@ export class PeerLink {
           this.handlers.onState("connecting");
           break;
         case "connected":
+          this.clearDisconnectTimer();
           this.handlers.onState("connected");
           break;
         case "disconnected":
-          this.handlers.onState("reconnecting");
+          this.holdBeforeReportingDisconnect();
           break;
         case "failed":
           this.handlers.onState("failed");
@@ -204,6 +213,7 @@ export class PeerLink {
 
   close(): void {
     this.disposed = true;
+    this.clearDisconnectTimer();
     this.control?.close();
     this.data?.close();
     this.pc?.close();
@@ -211,6 +221,20 @@ export class PeerLink {
     this.data = null;
     this.pc = null;
     this.pendingCandidates = [];
+  }
+
+  private holdBeforeReportingDisconnect(): void {
+    if (this.disconnectTimer) return;
+    this.disconnectTimer = setTimeout(() => {
+      this.disconnectTimer = null;
+      if (this.disposed) return;
+      if (this.pc?.connectionState === "disconnected") this.handlers.onState("reconnecting");
+    }, DISCONNECT_GRACE_MS);
+  }
+
+  private clearDisconnectTimer(): void {
+    if (this.disconnectTimer) clearTimeout(this.disconnectTimer);
+    this.disconnectTimer = null;
   }
 
   private async negotiate(): Promise<void> {

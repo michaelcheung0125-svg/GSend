@@ -250,8 +250,23 @@ export class GSendClient {
 
   leave(): void {
     this.closedByUser = true;
+    this.reportGiveUp();
     this.signaling.send({ t: "bye" });
     this.end(null);
+  }
+
+  /**
+   * Someone waiting on a connection that never arrives gives up long before ICE admits
+   * defeat, so without this the failures that matter most never reach the counters —
+   * which is exactly the number the TURN decision rests on.
+   */
+  private reportGiveUp(): void {
+    if (this.statReported || this.channelsOpen) return;
+    if (this.phase !== "pairing" && this.phase !== "joining") return;
+    this.statReported = true;
+    // Sent directly rather than through reportStat, whose await would land after the
+    // socket has already been closed by end().
+    this.signaling.send({ t: "stat", outcome: "failed", path: "unknown" });
   }
 
   // --- signalling ----------------------------------------------------------
@@ -284,7 +299,7 @@ export class GSendClient {
         break;
 
       case "closed":
-        this.end({ key: "error.sessionClosed", params: { reason: msg.reason } });
+        this.end({ key: msg.reason === "peer-left" ? "error.peerEnded" : "error.sessionIdle" });
         break;
 
       case "error":

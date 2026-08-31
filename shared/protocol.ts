@@ -36,6 +36,9 @@ export type ServerErrorCode =
   | "no_capacity"
   | "bad_request";
 
+/** Why a room shut down, as a code so each side can phrase it in its own language. */
+export type ClosedReason = "peer-left" | "idle";
+
 export type ServerMessage =
   | {
       t: "hello";
@@ -50,7 +53,7 @@ export type ServerMessage =
   | { t: "peer-resumed" }
   | { t: "signal"; data: unknown }
   | { t: "code-expired" }
-  | { t: "closed"; reason: string }
+  | { t: "closed"; reason: ClosedReason }
   | { t: "error"; code: ServerErrorCode; message: string };
 
 export type ConnectionOutcome = "connected" | "failed";

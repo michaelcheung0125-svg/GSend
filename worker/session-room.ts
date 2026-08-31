@@ -177,6 +177,9 @@ export class SessionRoom extends DurableObject<Env> {
     }
 
     if (msg.t === "bye") {
+      // Tell the other side before tearing the room down, or it is left watching a
+      // socket close with nothing to distinguish that from a network drop.
+      this.sendTo(role === "host" ? "guest" : "host", { t: "closed", reason: "peer-left" });
       await this.destroy("peer closed the session");
     }
   }
@@ -240,7 +243,7 @@ export class SessionRoom extends DurableObject<Env> {
     }
 
     if (now - meta.lastActiveAt >= SESSION_IDLE_MS) {
-      this.broadcast({ t: "closed", reason: "session idle" });
+      this.broadcast({ t: "closed", reason: "idle" });
       await this.destroy("idle");
       return;
     }
