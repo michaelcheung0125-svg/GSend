@@ -83,7 +83,7 @@ Chrome / Edge / Android Chrome + Safari / iOS Safari 全列必須;Safari 走 200
 - 多檔案、雙向文字框
 - **跨斷線續傳**(session 金鑰重配對 + chunk 完成表)
 - 打洞失敗的明確錯誤路徑
-- **驗收:iPhone Safari↔Windows Chrome 互傳成功**
+- **驗收:iPhone Safari↔Windows Chrome 互傳成功** ✅ 2026-08-31 真機通過
 
 ### M3(週 9–12)· 公測打磨
 - Safari 降級路徑細節(200MB 上限、串流寫入替代方案)
@@ -207,3 +207,18 @@ Landing 根本不會渲染**。於是接收端檢查大小時,`diskAvailable` �
 同時修掉一個相關缺陷:同一個實例重連時,原本只有連線狀態剛好是 `failed`/`reconnecting`
 才會嘗試修復,連線已 `closed` 就沒人重建,session 會永遠停在 Connecting。
 現在改由 `revivePeer()` 統一判斷:通道已開就不動,連線已死就重建,其餘嘗試 ICE restart。
+
+### M2 驗收通過(2026-08-31,真機)
+
+iPhone Safari ↔ Windows Chrome 雙向互傳成功,258MB 檔案完成,**手機端傳輸中途重新整理
+也能續收**。這是 §7 M2 的驗收條件,至此 M2 的清單全部完成:
+1GB 串流寫入、多檔案、雙向文字框、跨斷線續傳、打洞失敗錯誤路徑。
+
+前一輪的困惑值得記下:接收端顯示的是舊版錯誤訊息,因為那台裝置的頁面是部署前載入的。
+`index.html` 是 `max-age=0, must-revalidate`,重新整理即可取得新版,但已開啟的分頁不會自動更新。
+**日後修正接收端行為後,務必兩台都重新整理再測**,否則會誤判修正無效。
+
+### 首批連線指標
+
+`/api/stats` 累積 4 筆,全部是 `connectedInternet`(穿透 NAT 成功),零失敗。
+樣本太小不足以決定 TURN,但至少證明指標管線在真實環境運作正常。
