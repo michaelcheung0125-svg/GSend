@@ -52,7 +52,21 @@ npm run check    # TypeScript across the app, the Worker and the Vite config
 npm run build    # production build into dist/
 npm run deploy   # build, then deploy the Worker + static assets to Cloudflare
 npm run cf-typegen  # regenerate worker-configuration.d.ts after editing wrangler.jsonc
+npm run icons       # regenerate the app icons after changing the artwork
 ```
+
+### Enabling the relay (optional)
+
+Without this the app works, but connections that need a relay will fail. Create a TURN
+key under **Realtime → TURN** in the Cloudflare dashboard, then:
+
+```bash
+npx wrangler secret put TURN_KEY_ID
+npx wrangler secret put TURN_KEY_API_TOKEN
+```
+
+Cloudflare Realtime TURN includes 1,000 GB of relayed traffic per month, then charges
+$0.05/GB. `/api/stats` reports how many sessions actually used the relay.
 
 ### 中文快速開始
 
@@ -82,6 +96,7 @@ origin, so there is nothing else to host. Durable Objects run on Cloudflare's fr
 | `worker/index.ts` | Routes `/api/ws`, allocates codes, rate limits joins |
 | `worker/session-room.ts` | One Durable Object per code: pairing, relaying SDP/ICE, expiry |
 | `worker/join-guard.ts` | Per-IP token bucket against code brute-forcing |
+| `worker/turn.ts` | Mints short-lived relay credentials, STUN-only without a key |
 | `shared/protocol.ts` | Message types shared by the browser and the Worker |
 | `src/core/peer.ts` | RTCPeerConnection, perfect negotiation, data channels |
 | `src/core/transfer.ts` | Chunked file transfer, backpressure, acks, resume |
@@ -152,15 +167,20 @@ Sharing to GSend opens a session and shows the code straight away, holding the f
 until the other device is approved — a share is a statement of intent, so it should not
 land on an empty screen. Chromium only: Safari has no share target.
 
+**A relay for the connections STUN cannot make.** Mobile carriers put customers behind
+carrier-grade NAT, where hole punching simply cannot work, so phone-to-desktop across
+networks used to fail outright. Cloudflare Realtime TURN now covers those cases. Relay
+candidates are the lowest-priority kind in ICE, so a session that can go direct still
+does and costs nothing; only the ones that would otherwise have failed use the relay.
+Credentials are minted per session by the Worker and never reach the browser as a key.
+With no relay configured the app falls back to STUN alone and behaves exactly as before.
+
 **A privacy page** at [/privacy](https://gsend.cc/privacy) sets out exactly what the
 server handles, what it never receives, what stays on your device, and who else is
 involved (the host, and the STUN servers that see an IP address during connection
 setup). In English and Traditional Chinese.
 
 Known gaps, all scheduled:
-- **No TURN server.** If both devices sit behind strict NATs the connection fails with
-  a message suggesting the same Wi-Fi. The counts above are what will decide whether
-  paying for a relay is warranted.
 - **`showSaveFilePicker()` is not used yet.** On Chromium desktop and Chrome Android it
   would let a large file stream straight to the user's chosen location instead of being
   handed over as a blob afterwards. Safari and Firefox have no picker, so the blob path

@@ -3,12 +3,13 @@ import {
   isValidCode,
   type ConnectionOutcome,
   type ConnectionPath,
+  type IceServer,
   type Role,
   type ServerErrorCode,
   type ServerMessage,
 } from "../../shared/protocol";
 import type { Message } from "../i18n/strings";
-import { PeerLink, type PeerChannels, type PeerState } from "./peer";
+import { PeerLink, STUN_ONLY, type PeerChannels, type PeerState } from "./peer";
 import { clearSession, loadSession, saveSession } from "./session-store";
 import { Signaling } from "./signaling";
 import { TransferEngine, type TextMessage, type TransferView } from "./transfer";
@@ -49,6 +50,8 @@ const PROGRESS_THROTTLE_MS = 40;
 const MAX_RECONNECT_DELAY_MS = 15_000;
 /** ICE restarts often recover, so a failure only counts once it stops recovering. */
 const FAILURE_CONFIRM_MS = 15_000;
+/** Never hold a connection back waiting for relay credentials that may not arrive. */
+const ICE_REQUEST_TIMEOUT_MS = 3_000;
 
 interface Credentials {
   code: string;
@@ -97,6 +100,9 @@ export class GSendClient {
   private progressTimer: ReturnType<typeof setTimeout> | null = null;
   private failureTimer: ReturnType<typeof setTimeout> | null = null;
   private statReported = false;
+  private iceServersPromise: Promise<IceServer[]> | null = null;
+  private resolveIceServers: ((servers: IceServer[]) => void) | null = null;
+  private startingPeer = false;
 
   private listeners = new Set<() => void>();
   /** Built at the end of the constructor, once the engines it reads from exist. */
@@ -294,6 +300,10 @@ export class GSendClient {
         this.onSignal(msg.data);
         break;
 
+      case "ice":
+        this.deliverIceServers(msg.iceServers);
+        break;
+
       case "code-expired":
         this.end({ key: "error.nobodyJoined" });
         break;
@@ -331,11 +341,14 @@ export class GSendClient {
       this.phase = "pairing";
     }
 
+    // Warm the credentials now so a peer arriving later does not wait on them.
+    void this.requestIceServers();
+
     if (msg.peerPresent) {
       this.clearPeerAbsence();
       // Announced before any offer so the peer can rebuild first if we are new to it.
       this.announceInstance();
-      this.startPeer();
+      void this.startPeer();
     }
 
     this.emitNow();
@@ -395,6 +408,23 @@ export class GSendClient {
 
   // --- peer identity -------------------------------------------------------
 
+  private requestIceServers(): Promise<IceServer[]> {
+    if (this.iceServersPromise) return this.iceServersPromise;
+
+    this.iceServersPromise = new Promise<IceServer[]>((resolve) => {
+      this.resolveIceServers = resolve;
+      this.signaling.send({ t: "ice" });
+      setTimeout(() => this.deliverIceServers(STUN_ONLY), ICE_REQUEST_TIMEOUT_MS);
+    });
+    return this.iceServersPromise;
+  }
+
+  private deliverIceServers(servers: IceServer[]): void {
+    const resolve = this.resolveIceServers;
+    this.resolveIceServers = null;
+    resolve?.(servers.length > 0 ? servers : STUN_ONLY);
+  }
+
   private announceInstance(): void {
     this.signaling.send({ t: "signal", data: { instance: this.instanceId } });
   }
@@ -433,7 +463,7 @@ export class GSendClient {
    */
   private revivePeer(): void {
     if (!this.peer) {
-      this.startPeer();
+      void this.startPeer();
       return;
     }
     if (this.channelsOpen) return;
@@ -466,10 +496,25 @@ export class GSendClient {
 
   // --- peer ----------------------------------------------------------------
 
-  private startPeer(): void {
+  /**
+   * Relay credentials come from the server, so this waits for them — but only briefly.
+   * A connection that could have worked over STUN must not be blocked by a relay it may
+   * never need.
+   */
+  private async startPeer(): Promise<void> {
+    if (this.peer || this.startingPeer || !this.role) return;
+    this.startingPeer = true;
+
+    let iceServers: IceServer[];
+    try {
+      iceServers = await this.requestIceServers();
+    } finally {
+      this.startingPeer = false;
+    }
+
     if (this.peer || !this.role) return;
 
-    this.peer = new PeerLink(this.role, {
+    this.peer = new PeerLink(this.role, iceServers, {
       onSignal: (data) => this.signaling.send({ t: "signal", data }),
       onState: (state) => {
         this.connection = state;
@@ -503,7 +548,7 @@ export class GSendClient {
     this.transfer.detach();
     // Transfers are not abandoned here. The reloaded peer reopens its files and reports
     // where to resume; anything it could not recover it cancels explicitly.
-    this.startPeer();
+    void this.startPeer();
   }
 
   private onChannels(channels: PeerChannels): void {
@@ -664,6 +709,9 @@ export class GSendClient {
     this.reconnectAttempt = 0;
     this.reconnectDeadline = null;
     this.statReported = false;
+    this.iceServersPromise = null;
+    this.resolveIceServers = null;
+    this.startingPeer = false;
   }
 
   private persist(): void {

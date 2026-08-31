@@ -23,6 +23,7 @@ export class Metrics extends DurableObject<Env> {
     if (outcome === "failed") counts.failed += 1;
     else if (path === "lan") counts.connectedLan += 1;
     else if (path === "internet") counts.connectedInternet += 1;
+    else if (path === "relay") counts.connectedRelay += 1;
     else counts.connectedUnknown += 1;
 
     await this.ctx.storage.put(day, counts);
@@ -39,10 +40,12 @@ export class Metrics extends DurableObject<Env> {
 
     for (const [day, counts] of stored) {
       days[day] = counts;
-      totals.connectedLan += counts.connectedLan;
-      totals.connectedInternet += counts.connectedInternet;
-      totals.connectedUnknown += counts.connectedUnknown;
-      totals.failed += counts.failed;
+      // Days recorded before relaying existed have no count for it.
+      totals.connectedLan += counts.connectedLan ?? 0;
+      totals.connectedInternet += counts.connectedInternet ?? 0;
+      totals.connectedRelay += counts.connectedRelay ?? 0;
+      totals.connectedUnknown += counts.connectedUnknown ?? 0;
+      totals.failed += counts.failed ?? 0;
     }
 
     return { totals, days };

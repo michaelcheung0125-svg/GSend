@@ -10,8 +10,10 @@ import {
   type ConnectionPath,
   type Role,
   type ServerErrorCode,
+  type IceServer,
   type ServerMessage,
 } from "../shared/protocol";
+import { STUN_ONLY, credentialsLifetimeMs, mintIceServers } from "./turn";
 
 interface Meta {
   code: string;
@@ -23,6 +25,8 @@ interface Meta {
   emptySince: number | null;
   /** One connection outcome per session; whichever peer reports first wins. */
   statReported?: boolean;
+  /** Both peers share one set of relay credentials, minted once per session. */
+  ice?: { servers: IceServer[]; expiresAt: number };
 }
 
 const META_KEY = "meta";
@@ -171,6 +175,11 @@ export class SessionRoom extends DurableObject<Env> {
       return;
     }
 
+    if (msg.t === "ice") {
+      send(ws, { t: "ice", iceServers: await this.iceServers() });
+      return;
+    }
+
     if (msg.t === "stat") {
       await this.recordStat(msg.outcome, msg.path);
       return;
@@ -182,6 +191,24 @@ export class SessionRoom extends DurableObject<Env> {
       this.sendTo(role === "host" ? "guest" : "host", { t: "closed", reason: "peer-left" });
       await this.destroy("peer closed the session");
     }
+  }
+
+  /**
+   * Relay credentials cost money to use, so they are only ever handed to a socket that
+   * has already proved it belongs in this room. One set is minted per session and
+   * shared, rather than one per peer per reconnect.
+   */
+  private async iceServers(): Promise<IceServer[]> {
+    const meta = await this.ctx.storage.get<Meta>(META_KEY);
+    if (!meta) return STUN_ONLY;
+
+    const now = Date.now();
+    if (meta.ice && meta.ice.expiresAt > now) return meta.ice.servers;
+
+    const servers = await mintIceServers(this.env);
+    meta.ice = { servers, expiresAt: now + credentialsLifetimeMs() };
+    await this.ctx.storage.put(META_KEY, meta);
+    return servers;
   }
 
   private async recordStat(outcome: ConnectionOutcome, path: ConnectionPath): Promise<void> {

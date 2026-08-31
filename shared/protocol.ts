@@ -52,6 +52,7 @@ export type ServerMessage =
   | { t: "peer-left" }
   | { t: "peer-resumed" }
   | { t: "signal"; data: unknown }
+  | { t: "ice"; iceServers: IceServer[] }
   | { t: "code-expired" }
   | { t: "closed"; reason: ClosedReason }
   | { t: "error"; code: ServerErrorCode; message: string };
@@ -64,16 +65,27 @@ export type ConnectionOutcome = "connected" | "failed";
  * actually worked. The ratio of these to `failed` is the evidence for whether this
  * project ever needs to pay for a TURN relay (PLAN.md §3.2).
  */
-export type ConnectionPath = "lan" | "internet" | "unknown";
+export type ConnectionPath = "lan" | "internet" | "relay" | "unknown";
+
+/** What a browser needs to hand to RTCPeerConnection. */
+export interface IceServer {
+  urls: string | string[];
+  username?: string;
+  credential?: string;
+}
 
 export type ClientMessage =
   | { t: "signal"; data: unknown }
+  /** Ask the room for relay credentials; the socket is already authenticated. */
+  | { t: "ice" }
   | { t: "stat"; outcome: ConnectionOutcome; path: ConnectionPath }
   | { t: "bye" };
 
 export interface DayCounts {
   connectedLan: number;
   connectedInternet: number;
+  /** Hole punching failed and the bytes went through the relay — the billable case. */
+  connectedRelay: number;
   connectedUnknown: number;
   failed: number;
 }
@@ -81,6 +93,7 @@ export interface DayCounts {
 export const EMPTY_DAY: DayCounts = {
   connectedLan: 0,
   connectedInternet: 0,
+  connectedRelay: 0,
   connectedUnknown: 0,
   failed: 0,
 };

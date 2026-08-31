@@ -1,4 +1,4 @@
-import type { ConnectionPath } from "../../shared/protocol";
+import type { ConnectionPath, IceServer } from "../../shared/protocol";
 import { HEADER_BYTES } from "./protocol";
 
 interface StatEntry {
@@ -15,8 +15,11 @@ interface StatEntry {
   candidateType?: string;
 }
 
-/** No TURN by design (PLAN.md §3.2): if hole punching fails we tell the user, not pay for relay. */
-const ICE_SERVERS: RTCIceServer[] = [
+/**
+ * Used when the server has no relay configured or cannot be reached. Free and
+ * unlimited, and enough for the many connections that never need a relay.
+ */
+export const STUN_ONLY: IceServer[] = [
   { urls: "stun:stun.cloudflare.com:3478" },
   { urls: "stun:stun.l.google.com:19302" },
 ];
@@ -86,6 +89,7 @@ export class PeerLink {
 
   constructor(
     private readonly role: "host" | "guest",
+    private readonly iceServers: IceServer[],
     private readonly handlers: PeerHandlers,
   ) {
     this.polite = role === "guest";
@@ -94,7 +98,7 @@ export class PeerLink {
   start(): void {
     if (this.pc) return;
 
-    const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    const pc = new RTCPeerConnection({ iceServers: this.iceServers as RTCIceServer[] });
     this.pc = pc;
     this.announced = false;
 
@@ -215,8 +219,11 @@ export class PeerLink {
       const remote = stats.get(pair.remoteCandidateId ?? "") as StatEntry | undefined;
       if (!local?.candidateType || !remote?.candidateType) return "unknown";
 
+      // Relay is worth separating from the rest: it is the only path that costs money.
+      if (local.candidateType === "relay" || remote.candidateType === "relay") return "relay";
+
       // Both ends local means the devices were already on the same network; anything
-      // else means hole punching had to cross a NAT.
+      // else means hole punching crossed a NAT without help.
       return local.candidateType === "host" && remote.candidateType === "host"
         ? "lan"
         : "internet";
