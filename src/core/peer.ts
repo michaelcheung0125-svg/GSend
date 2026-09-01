@@ -91,6 +91,8 @@ export class PeerLink {
     private readonly role: "host" | "guest",
     private readonly iceServers: IceServer[],
     private readonly handlers: PeerHandlers,
+    /** Debug aid: refuse every candidate except relayed ones, to prove the relay works. */
+    private readonly forceRelay = false,
   ) {
     this.polite = role === "guest";
   }
@@ -98,7 +100,10 @@ export class PeerLink {
   start(): void {
     if (this.pc) return;
 
-    const pc = new RTCPeerConnection({ iceServers: this.iceServers as RTCIceServer[] });
+    const pc = new RTCPeerConnection({
+      iceServers: this.iceServers as RTCIceServer[],
+      ...(this.forceRelay ? { iceTransportPolicy: "relay" as RTCIceTransportPolicy } : {}),
+    });
     this.pc = pc;
     this.announced = false;
 
@@ -186,6 +191,25 @@ export class PeerLink {
     } catch (error) {
       if (!this.ignoreOffer) console.warn("[peer] signal failed", error);
     }
+  }
+
+  /**
+   * Bring relay servers into this same connection. setConfiguration takes effect at
+   * the next gathering, so the host follows it with an ICE restart; the guest's
+   * gathering restarts when the host's restart offer arrives. Returns false where
+   * setConfiguration is unsupported, and the caller rebuilds instead.
+   */
+  escalate(iceServers: IceServer[]): boolean {
+    if (this.disposed || !this.pc) return false;
+    try {
+      this.pc.setConfiguration({ iceServers: iceServers as RTCIceServer[] });
+    } catch {
+      return false;
+    }
+    // A fresh transport deserves a fresh retry budget.
+    this.restartAttempts = 0;
+    if (this.role === "host") this.pc.restartIce();
+    return true;
   }
 
   /**

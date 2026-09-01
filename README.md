@@ -169,9 +169,12 @@ land on an empty screen. Chromium only: Safari has no share target.
 
 **A relay for the connections STUN cannot make.** Mobile carriers put customers behind
 carrier-grade NAT, where hole punching simply cannot work, so phone-to-desktop across
-networks used to fail outright. Cloudflare Realtime TURN now covers those cases. Relay
-candidates are the lowest-priority kind in ICE, so a session that can go direct still
-does and costs nothing; only the ones that would otherwise have failed use the relay.
+networks used to fail outright. Cloudflare Realtime TURN now covers those cases. The first
+attempt runs without the relay at all; if nothing has connected within a few seconds —
+or ICE fails outright — the relay is added to the same connection and ICE restarted.
+Direct pairs keep being checked and still win when they exist, so a session that can go
+direct never spends relay traffic, and one that cannot connects a few seconds later
+over TURN, including TURN over TLS on port 443 for networks that block UDP entirely.
 Credentials are minted per session by the Worker and never reach the browser as a key.
 With no relay configured the app falls back to STUN alone and behaves exactly as before.
 

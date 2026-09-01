@@ -58,6 +58,18 @@ const ICE_REQUEST_TIMEOUT_MS = 3_000;
  * Reading it immediately reports a race, not a route.
  */
 const PATH_SETTLE_MS = 5_000;
+/**
+ * How long a direct-only attempt gets before the relay is brought in. ICE priority
+ * makes relay lowest-ranked, but rank only orders pairs that finish checking together
+ * — in practice a relay pair often validates first and then keeps the connection for
+ * its whole life. Measured between two tabs on one machine, every session went through
+ * the relay despite an obvious direct path. Withholding the relay until a *failure* was
+ * tried and reverted: ICE can sit in "checking" indefinitely without ever failing. A
+ * deadline is the only trigger that actually fires, so the first attempt runs without
+ * relay servers and this timer brings them into the same connection if nothing has
+ * opened in time. Direct connections have measured 1–3 s; this leaves headroom.
+ */
+const RELAY_AFTER_MS = 6_000;
 
 interface Credentials {
   code: string;
@@ -110,6 +122,11 @@ export class GSendClient {
   private resolveIceServers: ((servers: IceServer[]) => void) | null = null;
   private startingPeer = false;
   private settleTimer: ReturnType<typeof setTimeout> | null = null;
+  private escalateTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Everything the server offered, relay included, kept for escalation. */
+  private iceServersFull: IceServer[] | null = null;
+  /** Once true, every connection this session builds starts with the relay in play. */
+  private relayNeeded = false;
 
   private listeners = new Set<() => void>();
   /** Built at the end of the constructor, once the engines it reads from exist. */
@@ -433,9 +450,16 @@ export class GSendClient {
   }
 
   private deliverIceServers(servers: IceServer[]): void {
+    // Only the first delivery counts. The request has a fallback timeout that offers
+    // STUN alone, and without this guard a slow-but-successful reply was overwritten
+    // by that fallback — leaving escalation convinced there was no relay to add.
     const resolve = this.resolveIceServers;
+    if (!resolve) return;
     this.resolveIceServers = null;
-    resolve?.(servers.length > 0 ? servers : STUN_ONLY);
+
+    const resolved = servers.length > 0 ? servers : STUN_ONLY;
+    this.iceServersFull = resolved;
+    resolve(resolved);
   }
 
   private announceInstance(): void {
@@ -527,11 +551,19 @@ export class GSendClient {
 
     if (this.peer || !this.role) return;
 
+    const forceRelay = isRelayForced();
+    if (forceRelay) this.relayNeeded = true;
+    if (!this.relayNeeded) iceServers = withoutRelay(iceServers);
+
     this.peer = new PeerLink(this.role, iceServers, {
       onSignal: (data) => this.signaling.send({ t: "signal", data }),
       onState: (state) => {
         this.connection = state;
-        if (state === "failed") this.scheduleFailureStat();
+        if (state === "failed") {
+          // A definitive failure needs no deadline; bring the relay in at once.
+          this.engageRelay();
+          this.scheduleFailureStat();
+        }
         this.emitNow();
       },
       onChannels: (channels) => this.onChannels(channels),
@@ -545,9 +577,43 @@ export class GSendClient {
         if (this.approval !== "granted") return;
         this.transfer.handleFrame(frame);
       },
-    });
+    }, forceRelay);
 
     this.peer.start();
+    this.armRelayDeadline();
+  }
+
+  private armRelayDeadline(): void {
+    if (this.relayNeeded || this.escalateTimer) return;
+    this.escalateTimer = setTimeout(() => {
+      this.escalateTimer = null;
+      if (!this.channelsOpen) this.engageRelay();
+    }, RELAY_AFTER_MS);
+  }
+
+  /**
+   * The direct attempt has had its chance; add the relay to the running connection.
+   * Direct pairs keep being checked and still win when they work, so this widens the
+   * search rather than redirecting it.
+   */
+  private engageRelay(): void {
+    if (this.relayNeeded) return;
+
+    const full = this.iceServersFull;
+    if (!full || full.length === withoutRelay(full).length) return;
+
+    this.relayNeeded = true;
+    this.clearEscalateTimer();
+    if (!this.peer || this.channelsOpen) return;
+
+    // Rebuild only for a browser whose setConfiguration cannot do it in place; the
+    // rebuilt peer starts with the full list because relayNeeded is already set.
+    if (!this.peer.escalate(full)) this.rebuildPeer();
+  }
+
+  private clearEscalateTimer(): void {
+    if (this.escalateTimer) clearTimeout(this.escalateTimer);
+    this.escalateTimer = null;
   }
 
   private rebuildPeer(): void {
@@ -566,6 +632,7 @@ export class GSendClient {
 
   private onChannels(channels: PeerChannels): void {
     this.channelsOpen = true;
+    this.clearEscalateTimer();
     // Open channels are proof the peer is here, whatever the signalling said earlier.
     this.clearPeerAbsence();
     this.peerPresent = true;
@@ -729,6 +796,8 @@ export class GSendClient {
     this.statReported = false;
     this.iceServersPromise = null;
     this.resolveIceServers = null;
+    this.iceServersFull = null;
+    this.relayNeeded = false;
     this.startingPeer = false;
   }
 
@@ -756,6 +825,7 @@ export class GSendClient {
     if (this.progressTimer) clearTimeout(this.progressTimer);
     if (this.failureTimer) clearTimeout(this.failureTimer);
     if (this.settleTimer) clearTimeout(this.settleTimer);
+    this.clearEscalateTimer();
     this.settleTimer = null;
     this.peerTimer = null;
     this.progressTimer = null;
@@ -806,5 +876,22 @@ export class GSendClient {
       notice: this.notice,
       error: this.error,
     };
+  }
+}
+
+/** STUN entries only; anything offering a turn: or turns: URL is dropped. */
+function withoutRelay(servers: IceServer[]): IceServer[] {
+  return servers.filter((server) => {
+    const urls = Array.isArray(server.urls) ? server.urls : [server.urls];
+    return !urls.some((url) => url.startsWith("turn:") || url.startsWith("turns:"));
+  });
+}
+
+/** Debug switch: ?relay=force proves the relay path works on a given network. */
+function isRelayForced(): boolean {
+  try {
+    return new URLSearchParams(location.search).get("relay") === "force";
+  } catch {
+    return false;
   }
 }
