@@ -52,6 +52,12 @@ const MAX_RECONNECT_DELAY_MS = 15_000;
 const FAILURE_CONFIRM_MS = 15_000;
 /** Never hold a connection back waiting for relay credentials that may not arrive. */
 const ICE_REQUEST_TIMEOUT_MS = 3_000;
+/**
+ * ICE keeps checking after the channels open and can settle on a better pair than the
+ * one that happened to validate first, so the path is read once it has stopped moving.
+ * Reading it immediately reports a race, not a route.
+ */
+const PATH_SETTLE_MS = 5_000;
 
 interface Credentials {
   code: string;
@@ -103,6 +109,7 @@ export class GSendClient {
   private iceServersPromise: Promise<IceServer[]> | null = null;
   private resolveIceServers: ((servers: IceServer[]) => void) | null = null;
   private startingPeer = false;
+  private settleTimer: ReturnType<typeof setTimeout> | null = null;
 
   private listeners = new Set<() => void>();
   /** Built at the end of the constructor, once the engines it reads from exist. */
@@ -267,7 +274,13 @@ export class GSendClient {
    * which is exactly the number the TURN decision rests on.
    */
   private reportGiveUp(): void {
-    if (this.statReported || this.channelsOpen) return;
+    if (this.statReported) return;
+    if (this.channelsOpen) {
+      // Connected, but ended before the settle timer fired; the path is still worth
+      // recording even if it had not fully quiesced.
+      void this.reportStat("connected");
+      return;
+    }
     if (this.phase !== "pairing" && this.phase !== "joining") return;
     this.statReported = true;
     // Sent directly rather than through reportStat, whose await would land after the
@@ -562,7 +575,12 @@ export class GSendClient {
       clearTimeout(this.failureTimer);
       this.failureTimer = null;
     }
-    void this.reportStat("connected");
+    if (!this.statReported && !this.settleTimer) {
+      this.settleTimer = setTimeout(() => {
+        this.settleTimer = null;
+        void this.reportStat("connected");
+      }, PATH_SETTLE_MS);
+    }
 
     // The guest cannot do anything until the host presses Approve (PLAN.md §2).
     this.phase = this.approval === "granted" ? "active" : "pairing";
@@ -737,6 +755,8 @@ export class GSendClient {
     if (this.peerTimer) clearTimeout(this.peerTimer);
     if (this.progressTimer) clearTimeout(this.progressTimer);
     if (this.failureTimer) clearTimeout(this.failureTimer);
+    if (this.settleTimer) clearTimeout(this.settleTimer);
+    this.settleTimer = null;
     this.peerTimer = null;
     this.progressTimer = null;
     this.failureTimer = null;

@@ -4,6 +4,8 @@ export { SessionRoom } from "./session-room";
 export { JoinGuard } from "./join-guard";
 export { Metrics } from "./metrics";
 
+import { checkRelay } from "./turn";
+
 /** How many random codes to try before giving up on finding a free one. */
 const CODE_ATTEMPTS = 8;
 
@@ -17,6 +19,16 @@ export default {
     if (url.pathname === "/share") return Response.redirect(new URL("/", url).toString(), 303);
 
     if (url.pathname === "/api/health") return Response.json({ ok: true });
+
+    // Says whether the relay is usable. Reveals no credential — only whether one is
+    // present and what Cloudflare made of it.
+    if (url.pathname === "/api/relay") {
+      // A status endpoint that can be cached reports the past, which is worse than
+      // reporting nothing: it hid a working relay behind a stale failure.
+      return Response.json(await checkRelay(env), {
+        headers: { "Cache-Control": "no-store" },
+      });
+    }
 
     // Public on purpose: these are anonymous counts with nothing to protect, and
     // showing them is part of being honest about what this service records.
