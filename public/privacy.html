@@ -7,22 +7,23 @@
     <title>Privacy — GSend</title>
     <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png" />
     <style>
+      @import url("https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&family=Lora:wght@400;600&family=Noto+Serif+TC:wght@400;600&display=swap");
       :root {
-        --bg: #f6f7f9;
-        --surface: #ffffff;
-        --border: #dfe3e8;
-        --text: #16191d;
-        --muted: #656d78;
-        --accent: #2f6df6;
+        --bg: #f3f2f2;
+        --surface: #eae9e9;
+        --border: color-mix(in srgb, #201f1d 16%, transparent);
+        --text: #201f1d;
+        --muted: color-mix(in srgb, #201f1d 55%, transparent);
+        --accent: #b68235;
       }
       @media (prefers-color-scheme: dark) {
         :root {
-          --bg: #101317;
-          --surface: #181c22;
-          --border: #2c333c;
-          --text: #e8ebef;
-          --muted: #9099a5;
-          --accent: #5b8cff;
+          --bg: #1c1a18;
+          --surface: #262321;
+          --border: color-mix(in srgb, #e9e4de 18%, transparent);
+          --text: #e9e4de;
+          --muted: color-mix(in srgb, #e9e4de 55%, transparent);
+          --accent: #cf9a4d;
         }
       }
       * {
@@ -33,7 +34,7 @@
         padding: 0 16px 64px;
         background: var(--bg);
         color: var(--text);
-        font-family: system-ui, -apple-system, "Segoe UI", "Noto Sans TC", sans-serif;
+        font-family: "Lora", "Noto Serif TC", Georgia, serif;
         line-height: 1.65;
       }
       main {
@@ -60,8 +61,12 @@
         height: 20px;
         border-radius: 6px;
       }
+      h1, h2 {
+        font-family: "Cormorant Garamond", "Noto Serif TC", Georgia, serif;
+        font-weight: 400;
+      }
       h1 {
-        font-size: 26px;
+        font-size: 30px;
         letter-spacing: -0.02em;
         margin: 12px 0 4px;
       }
@@ -80,7 +85,7 @@
         margin-top: 0;
       }
       .card {
-        background: var(--surface);
+        background: color-mix(in srgb, var(--text) 2%, transparent);
         border: 1px solid var(--border);
         border-radius: 14px;
         padding: 4px 20px 20px;
@@ -172,9 +177,10 @@
         <li>The text you send through the message box.</li>
       </ul>
       <p>
-        These travel over a direct, encrypted connection between the two browsers. There is no
-        relay server in this project, so if a direct connection cannot be made, the transfer
-        fails rather than falling back to sending your data through us.
+        These travel over an end-to-end encrypted connection between the two browsers. When a
+        direct route cannot be opened — mobile carriers often block one — the encrypted stream
+        is carried by Cloudflare's TURN relay instead. The relay forwards ciphertext; the keys
+        stay in the two browsers, so it cannot read what passes through it.
       </p>
 
       <h2>What stays on your device</h2>
@@ -199,9 +205,10 @@
         </li>
         <li>
           <strong>STUN servers run by Cloudflare and Google</strong> are asked, during connection
-          setup, how your device appears from the outside. This tells them your IP address. It
-          is how a direct connection between two networks is possible at all; no file data ever
-          passes through them.
+          setup, how your device appears from the outside. This tells them your IP address; no
+          file data passes through them. When no direct route exists, <strong>Cloudflare's TURN
+          relay</strong> carries the encrypted stream — it sees your IP address and the amount
+          of traffic, never the content.
         </li>
       </ul>
 
@@ -253,8 +260,9 @@
         <li>你透過訊息框傳送的文字。</li>
       </ul>
       <p>
-        這些都走兩個瀏覽器之間的直接加密連線。這個專案沒有中轉伺服器,
-        所以當直連無法建立時,傳輸會失敗,而不是改成把你的資料經由我們送出。
+        這些都走兩個瀏覽器之間的端對端加密連線。當直連無法建立時(行動網路經常擋掉直連),
+        加密後的資料流會改由 Cloudflare 的 TURN 中繼伺服器轉送。中繼只經手密文,
+        金鑰始終在兩個瀏覽器手上,它無法讀取經過它的內容。
       </p>
 
       <h2>留在你裝置上的東西</h2>
@@ -274,7 +282,8 @@
         <li><strong>Cloudflare</strong> 提供本站與信令伺服器的代管,會看到任何網站主機都會看到的一般請求資訊。</li>
         <li>
           <strong>Cloudflare 與 Google 的 STUN 伺服器</strong>會在建立連線時被詢問你的裝置從外部看起來是什麼樣子,
-          這會讓它們得知你的 IP 位址。這是跨網路直連得以成立的前提;沒有任何檔案資料經過它們。
+          這會讓它們得知你的 IP 位址;沒有任何檔案資料經過它們。當直連不存在時,
+          <strong>Cloudflare 的 TURN 中繼</strong>會轉送加密後的資料流——它看得到你的 IP 位址與流量大小,永遠看不到內容。
         </li>
       </ul>
 

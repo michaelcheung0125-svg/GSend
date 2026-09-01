@@ -35,6 +35,8 @@ export interface Snapshot {
   /** When the other device dropped off, so the UI can explain the wait. */
   peerAbsentSince: number | null;
   connection: PeerState;
+  /** True once this session brought the relay into play (billable path). */
+  relayEngaged: boolean;
   approval: Approval;
   channelsOpen: boolean;
   outgoing: TransferView[];
@@ -864,6 +866,7 @@ export class GSendClient {
       peerPresent: this.peerPresent,
       peerAbsentSince: this.peerAbsentSince,
       connection: this.connection,
+      relayEngaged: this.relayNeeded,
       approval: this.approval,
       channelsOpen: this.channelsOpen,
       outgoing: this.transfer.snapshotOutgoing(),

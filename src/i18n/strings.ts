@@ -14,21 +14,29 @@ export const en = {
   "app.language": "切換到中文",
   "app.languageShort": "中文",
 
+  "ended.kicker": "Closed",
   "ended.title": "Session ended",
   "ended.default": "The session is closed.",
   "ended.startOver": "Start over",
 
+  "landing.kicker": "Browser to browser · nothing stored",
   "landing.title": "Move files between your devices",
-  "landing.subtitle": "One code, one direct connection. Up to {size} per file.",
+  "landing.subtitle":
+    "One code, one direct connection. Up to {size} per file. The code expires after 60 seconds, and nothing moves until you approve the device that joined.",
   "landing.start": "Start a session",
   "landing.orJoin": "or join one",
   "landing.join": "Join",
+  "landing.joinSub": "Enter the 4 digits shown on the other device.",
+  "landing.qrHint": "Scanning the square on the other screen also joins — no typing needed.",
   "landing.codeLabel": "4-digit code",
 
   "host.creating": "Creating a session…",
   "host.reserving": "Reserving a code.",
-  "host.title": "On the other device",
-  "host.subtitle": "Open this site and enter the code, or scan the square.",
+  "host.kicker": "On the other device",
+  "host.title": "Open this site and enter the code",
+  "host.subtitle": "Or scan the square.",
+  "host.burnNote": "The code dies the moment one device joins, and only 12 attempts a minute are allowed.",
+  "host.copy": "Copy",
   "host.codeLabel": "Code {code}",
   "host.expiresIn": "Expires in {seconds}s",
   "host.expired": "Expired",
@@ -39,6 +47,7 @@ export const en = {
     "{count} shared file(s) will go as soon as the other device connects.",
   "host.sharePendingText": "Shared text will go as soon as the other device connects.",
 
+  "pairing.kicker": "Needs your approval",
   "pairing.deviceConnected": "A device connected",
   "pairing.approvePrompt":
     "Only continue if this was you or someone you are expecting. Nothing is sent until you approve.",
@@ -54,6 +63,10 @@ export const en = {
   "pairing.noDirectRoute":
     "Could not open a direct connection between these two networks. Mobile data usually blocks it — putting both devices on the same Wi-Fi is the reliable fix.",
 
+  "transfer.session": "This session",
+  "transfer.sessionMeta": "{count} item(s) · up {up} · down {down}",
+  "transfer.persistNote":
+    "Received files sit on this device's disk and survive a reload, until you press Save.",
   "transfer.dropHere": "Drop files here",
   "transfer.chooseFiles": "Choose files",
   "transfer.textPlaceholder": "Send text or a link",
@@ -122,21 +135,28 @@ export const zh: Record<MessageKey, string> = {
   "app.language": "Switch to English",
   "app.languageShort": "EN",
 
+  "ended.kicker": "已關閉",
   "ended.title": "連線已結束",
   "ended.default": "這個連線已經關閉。",
   "ended.startOver": "重新開始",
 
+  "landing.kicker": "瀏覽器直連 · 檔案不經伺服器",
   "landing.title": "在你的裝置之間傳檔案",
-  "landing.subtitle": "一組數字碼,一條直接連線。每個檔案最大 {size}。",
+  "landing.subtitle": "一組數字碼,一條直接連線。每個檔案最大 {size}。數字碼 60 秒後失效,對方連上時還需要你按下同意,任何東西才會開始移動。",
   "landing.start": "建立連線",
   "landing.orJoin": "或加入一個",
   "landing.join": "加入",
+  "landing.joinSub": "輸入另一台裝置上顯示的 4 位數字。",
+  "landing.qrHint": "掃描對方畫面上的方塊也可以直接加入,不用打數字。",
   "landing.codeLabel": "4 位數字碼",
 
   "host.creating": "正在建立連線…",
   "host.reserving": "正在取得數字碼。",
-  "host.title": "在另一台裝置上",
-  "host.subtitle": "開啟這個網站並輸入數字碼,或掃描下方方塊。",
+  "host.kicker": "在另一台裝置上",
+  "host.title": "開啟這個網站並輸入數字碼",
+  "host.subtitle": "或掃描下面的方塊。",
+  "host.burnNote": "數字碼在第一台裝置加入後就作廢,而且每分鐘只允許 12 次嘗試。",
+  "host.copy": "複製",
   "host.codeLabel": "數字碼 {code}",
   "host.expiresIn": "{seconds} 秒後失效",
   "host.expired": "已失效",
@@ -146,6 +166,7 @@ export const zh: Record<MessageKey, string> = {
   "host.sharePendingFiles": "已分享的 {count} 個檔案會在另一台裝置連上後送出。",
   "host.sharePendingText": "已分享的文字會在另一台裝置連上後送出。",
 
+  "pairing.kicker": "需要你確認",
   "pairing.deviceConnected": "有一台裝置已連線",
   "pairing.approvePrompt": "只有在這是你自己、或你正在等待的人時才繼續。你按下同意之前不會送出任何東西。",
   "pairing.approve": "同意",
@@ -158,6 +179,9 @@ export const zh: Record<MessageKey, string> = {
   "pairing.connectingBody": "正在連線到另一台裝置…",
   "pairing.noDirectRoute": "無法在這兩個網路之間建立直接連線。行動網路通常會擋掉這種連線——讓兩台裝置連上同一個 Wi-Fi 是最可靠的做法。",
 
+  "transfer.session": "這次連線",
+  "transfer.sessionMeta": "{count} 個項目 · 上傳 {up} · 下載 {down}",
+  "transfer.persistNote": "收到的檔案存在這台裝置的磁碟上,重新整理也還在,直到你按下儲存。",
   "transfer.dropHere": "把檔案拖到這裡",
   "transfer.chooseFiles": "選擇檔案",
   "transfer.textPlaceholder": "傳送文字或連結",

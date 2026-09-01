@@ -8,6 +8,9 @@ interface Props {
   state: Snapshot;
 }
 
+/** The code is joinable for this long; the countdown bar drains against it. */
+const JOIN_WINDOW_S = 60;
+
 export default function HostPanel({ client, state }: Props) {
   const { t } = useI18n();
   const [qr, setQr] = useState<string | null>(null);
@@ -40,49 +43,79 @@ export default function HostPanel({ client, state }: Props) {
 
   if (state.phase === "creating") {
     return (
-      <section className="card card--centered">
-        <h1 className="card__title">{t("host.creating")}</h1>
-        <p className="muted">{t("host.reserving")}</p>
+      <section className="ended">
+        <div className="kicker">{t("host.kicker")}</div>
+        <h2 className="display display--md">{t("host.creating")}</h2>
+        <p className="ended__lede">{t("host.reserving")}</p>
       </section>
     );
   }
 
   return (
-    <section className="card card--centered">
-      <h1 className="card__title">{t("host.title")}</h1>
-      <p className="muted">{t("host.subtitle")}</p>
+    <section className="screen screen--host">
+      <div>
+        <div className="kicker">{t("host.kicker")}</div>
+        <h2 className="display display--md">{t("host.title")}</h2>
+        <p className="sub" style={{ marginBottom: 30 }}>
+          {t("host.subtitle")}
+        </p>
 
-      <div className="code-display" aria-label={t("host.codeLabel", { code: state.code ?? "" })}>
-        {(state.code ?? "").split("").map((digit, index) => (
-          <span key={index} className="code-display__digit">
-            {digit}
+        <div className="code-display" aria-label={t("host.codeLabel", { code: state.code ?? "" })}>
+          {(state.code ?? "").split("").map((digit, index) => (
+            <span key={index} className="code-display__digit">
+              {digit}
+            </span>
+          ))}
+        </div>
+
+        <div className="countdown-row">
+          <div className="countdown-row__track">
+            <div
+              className="countdown-row__fill"
+              style={{ width: `${Math.max(0, Math.min(100, (remaining / JOIN_WINDOW_S) * 100))}%` }}
+            />
+          </div>
+          <span className={remaining <= 10 ? "countdown countdown--urgent" : "countdown"}>
+            {remaining > 0 ? t("host.expiresIn", { seconds: remaining }) : t("host.expired")}
           </span>
-        ))}
+        </div>
+
+        {state.pendingShare && (
+          <p className="alert alert--soft" style={{ marginTop: 20 }}>
+            {state.pendingShare.files > 0
+              ? t("host.sharePendingFiles", { count: state.pendingShare.files })
+              : t("host.sharePendingText")}
+          </p>
+        )}
+
+        <p className="sub" style={{ marginTop: 22, maxWidth: "52ch" }}>
+          {t("host.burnNote")}
+        </p>
       </div>
 
-      <p className={remaining <= 10 ? "countdown countdown--urgent" : "countdown"}>
-        {remaining > 0 ? t("host.expiresIn", { seconds: remaining }) : t("host.expired")}
-      </p>
+      <div className="screen__rule" aria-hidden="true" />
 
-      {qr && <img className="qr" src={qr} alt={t("host.qrAlt")} width={220} height={220} />}
-
-      {state.pendingShare && (
-        <p className="alert alert--soft">
-          {state.pendingShare.files > 0
-            ? t("host.sharePendingFiles", { count: state.pendingShare.files })
-            : t("host.sharePendingText")}
-        </p>
-      )}
-
-      {state.shareUrl && (
-        <button type="button" className="btn btn--ghost link-copy" onClick={copy}>
-          {copied ? t("host.linkCopied") : state.shareUrl.replace(/^https?:\/\//, "")}
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        {qr && (
+          <div className="qr-plate">
+            <img className="qr" src={qr} alt={t("host.qrAlt")} width={284} height={284} />
+          </div>
+        )}
+        {state.shareUrl && (
+          <button type="button" className="btn btn--secondary link-copy" onClick={copy}>
+            <span>{state.shareUrl.replace(/^https?:\/\//, "")}</span>
+            <span className="link-copy__hint">{copied ? t("host.linkCopied") : t("host.copy")}</span>
+          </button>
+        )}
+        <button
+          type="button"
+          className="btn btn--ghost"
+          style={{ alignSelf: "flex-start" }}
+          onClick={() => client.reset()}
+        >
+          {t("host.cancel")}
         </button>
-      )}
-
-      <button type="button" className="btn" onClick={() => client.reset()}>
-        {t("host.cancel")}
-      </button>
+      </div>
     </section>
   );
 }

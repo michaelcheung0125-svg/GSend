@@ -1,8 +1,8 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { GSendClient } from "./core/client";
+import { GSendClient, type Snapshot } from "./core/client";
 import { collectShare } from "./core/share";
-import { prepareStorage } from "./core/sink";
-import { useI18n } from "./i18n";
+import { formatBytes, prepareStorage } from "./core/sink";
+import { useI18n, type Translator } from "./i18n";
 import Landing from "./ui/Landing";
 import HostPanel from "./ui/HostPanel";
 import PairingPanel from "./ui/PairingPanel";
@@ -20,7 +20,8 @@ function readCodeFromUrl(): string {
 
 export default function App() {
   const state = useSyncExternalStore(client.subscribe, client.getSnapshot);
-  const { t, tm, toggle } = useI18n();
+  const i18n = useI18n();
+  const { t, toggle } = i18n;
   const [prefill, setPrefill] = useState("");
 
   useEffect(() => {
@@ -56,6 +57,7 @@ export default function App() {
 
   const unlocked = state.approval === "granted";
   const pairing = state.phase === "joining" || state.phase === "pairing";
+  const inSession = state.phase !== "idle" && state.phase !== "ended";
 
   return (
     <div className="app">
@@ -69,21 +71,21 @@ export default function App() {
           <span className="brand__mark" aria-hidden="true" />
           GSend
         </button>
-        <div className="row">
-          <button
-            type="button"
-            className="btn btn--ghost btn--tiny"
-            onClick={toggle}
-            title={t("app.language")}
-          >
-            {t("app.languageShort")}
+        {state.phase === "idle" && <span className="header-host">gsend.cc</span>}
+        {inSession && state.channelsOpen && <StatusChip state={state} i18n={i18n} />}
+        <button
+          type="button"
+          className="btn btn--ghost"
+          onClick={toggle}
+          title={t("app.language")}
+        >
+          {t("app.languageShort")}
+        </button>
+        {state.phase !== "idle" && (
+          <button type="button" className="btn btn--secondary" onClick={() => client.leave()}>
+            {t("app.endSession")}
           </button>
-          {state.phase !== "idle" && (
-            <button type="button" className="btn btn--ghost" onClick={() => client.leave()}>
-              {t("app.endSession")}
-            </button>
-          )}
-        </div>
+        )}
       </header>
 
       <main className="app__main">
@@ -100,15 +102,7 @@ export default function App() {
         {(state.phase === "active" || (pairing && unlocked)) && (
           <TransferPanel client={client} state={state} />
         )}
-        {state.phase === "ended" && (
-          <section className="card card--centered">
-            <h1 className="card__title">{t("ended.title")}</h1>
-            <p className="muted">{tm(state.error) ?? t("ended.default")}</p>
-            <button type="button" className="btn btn--primary" onClick={() => client.reset()}>
-              {t("ended.startOver")}
-            </button>
-          </section>
-        )}
+        {state.phase === "ended" && <EndedScreen state={state} i18n={i18n} />}
       </main>
 
       <footer className="app__footer">
@@ -118,5 +112,52 @@ export default function App() {
         </a>
       </footer>
     </div>
+  );
+}
+
+/** "已連線 · direct" in the header, per the design's CLI-flavoured status line. */
+function StatusChip({ state, i18n }: { state: Snapshot; i18n: Translator }) {
+  const online = state.connection === "connected" && state.channelsOpen;
+  const label = online
+    ? `${i18n.t("status.connected")} · ${state.relayEngaged ? "turn" : "direct"}`
+    : state.peerAbsentSince !== null && !state.channelsOpen
+      ? i18n.t("status.peerAway")
+      : state.connection === "reconnecting"
+        ? i18n.t("status.reconnecting")
+        : state.connection === "failed"
+          ? i18n.t("status.lost")
+          : i18n.t("status.connecting");
+
+  return (
+    <span className={online ? "status" : "status status--warn"}>
+      <span className="status__dot" aria-hidden="true" />
+      {label}
+    </span>
+  );
+}
+
+function EndedScreen({ state, i18n }: { state: Snapshot; i18n: Translator }) {
+  const { t, tm } = i18n;
+
+  const sent = state.outgoing.filter((row) => row.status === "done");
+  const received = state.incoming.filter((row) => row.status === "done");
+  const sentBytes = sent.reduce((sum, row) => sum + row.size, 0);
+  const receivedBytes = received.reduce((sum, row) => sum + row.size, 0);
+  const hasSummary = sent.length > 0 || received.length > 0;
+
+  return (
+    <section className="ended">
+      <div className="kicker kicker--muted">{t("ended.kicker")}</div>
+      <h2 className="display display--md">{t("ended.title")}</h2>
+      <p className="ended__lede">{tm(state.error) ?? t("ended.default")}</p>
+      {hasSummary && (
+        <div className="term term--muted">
+          {`sent      ${sent.length} · ${formatBytes(sentBytes)}\nreceived  ${received.length} · ${formatBytes(receivedBytes)}`}
+        </div>
+      )}
+      <button type="button" className="btn btn--primary btn--lg" onClick={() => client.reset()}>
+        {t("ended.startOver")}
+      </button>
+    </section>
   );
 }
