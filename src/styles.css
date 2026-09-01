@@ -13,6 +13,9 @@
   --color-surface: #eae9e9;
   --color-text: #201f1d;
   --color-accent: #b68235;
+  /* Gold at text sizes: the raw accent reads 3:1 on paper, this reads 6:1.
+     Borders and bar fills keep the brighter accent — shapes need less. */
+  --color-accent-text: #7d5411;
   --color-accent-300: #facb8d;
   --color-accent-700: #7d5411;
   --color-accent-800: #5a3b0a;
@@ -25,14 +28,20 @@
   --radius-md: 4px;
   --shadow-sm: 0 1px 2px color-mix(in srgb, #2d2b2b 14%, transparent);
 
-  --ink-70: color-mix(in srgb, var(--color-text) 70%, transparent);
-  --ink-60: color-mix(in srgb, var(--color-text) 60%, transparent);
-  --ink-55: color-mix(in srgb, var(--color-text) 55%, transparent);
-  --ink-50: color-mix(in srgb, var(--color-text) 50%, transparent);
-  --ink-45: color-mix(in srgb, var(--color-text) 45%, transparent);
-  --ink-28: color-mix(in srgb, var(--color-text) 28%, transparent);
-  --ink-20: color-mix(in srgb, var(--color-text) 20%, transparent);
-  --ink-16: color-mix(in srgb, var(--color-text) 16%, transparent);
+  /*
+   * Text tiers. The design's original mixes (70/55/45…) sat too close to the
+   * paper in practice, so every readable tier is lifted; the faint tiers stay
+   * faint on purpose — they draw structure (empty cells, spent bar track), not
+   * words. Names keep their design-file values for traceability.
+   */
+  --ink-70: color-mix(in srgb, var(--color-text) 82%, transparent);
+  --ink-60: color-mix(in srgb, var(--color-text) 74%, transparent);
+  --ink-55: color-mix(in srgb, var(--color-text) 70%, transparent);
+  --ink-50: color-mix(in srgb, var(--color-text) 64%, transparent);
+  --ink-45: color-mix(in srgb, var(--color-text) 58%, transparent);
+  --ink-28: color-mix(in srgb, var(--color-text) 34%, transparent);
+  --ink-20: color-mix(in srgb, var(--color-text) 24%, transparent);
+  --ink-16: color-mix(in srgb, var(--color-text) 18%, transparent);
   --ink-04: color-mix(in srgb, var(--color-text) 4%, transparent);
   --ink-02: color-mix(in srgb, var(--color-text) 2%, transparent);
 }
@@ -43,11 +52,22 @@
     --color-surface: #262321;
     --color-text: #e9e4de;
     --color-accent: #cf9a4d;
+    --color-accent-text: #dfb173;
     --color-accent-300: #6a4a1c;
     --color-accent-700: #e2b273;
     --color-accent-800: #eccb96;
     --color-divider: color-mix(in srgb, #e9e4de 18%, transparent);
     --shadow-sm: 0 1px 2px color-mix(in srgb, #000 40%, transparent);
+
+    /* Translucency loses more legibility over a dark ground, so the readable
+       tiers are lifted further here. */
+    --ink-70: color-mix(in srgb, var(--color-text) 88%, transparent);
+    --ink-60: color-mix(in srgb, var(--color-text) 82%, transparent);
+    --ink-55: color-mix(in srgb, var(--color-text) 78%, transparent);
+    --ink-50: color-mix(in srgb, var(--color-text) 72%, transparent);
+    --ink-45: color-mix(in srgb, var(--color-text) 66%, transparent);
+    --ink-28: color-mix(in srgb, var(--color-text) 40%, transparent);
+    --ink-20: color-mix(in srgb, var(--color-text) 28%, transparent);
   }
 }
 
@@ -141,7 +161,7 @@ body {
 
 .app__footer-link {
   margin-left: auto;
-  color: var(--color-accent);
+  color: var(--color-accent-text);
   text-underline-offset: 3px;
   padding: 6px 2px;
 }
@@ -244,7 +264,7 @@ body {
 }
 
 .btn--primary {
-  color: var(--color-accent);
+  color: var(--color-accent-text);
   border-color: var(--color-accent);
 }
 .btn--primary:hover:not(:disabled) {
@@ -268,7 +288,7 @@ body {
 }
 
 .btn--ghost {
-  color: var(--color-accent);
+  color: var(--color-accent-text);
   padding-inline: 8px;
 }
 .btn--ghost:hover:not(:disabled) {
@@ -308,7 +328,7 @@ body {
   font-size: 11px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--color-accent);
+  color: var(--color-accent-text);
   margin-bottom: 16px;
   font-family: var(--font-body);
 }
@@ -530,7 +550,7 @@ body {
 }
 
 .link-copy__hint {
-  color: var(--color-accent);
+  color: var(--color-accent-text);
   font-family: var(--font-heading);
   font-weight: 600;
   font-size: 13px;
