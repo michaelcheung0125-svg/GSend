@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { GSendClient, Snapshot } from "../core/client";
 import { formatBytes } from "../core/sink";
 import type { TransferView } from "../core/transfer";
@@ -15,6 +15,7 @@ export default function TransferPanel({ client, state }: Props) {
   const fileInput = useRef<HTMLInputElement>(null);
   const [draft, setDraft] = useState("");
   const [dragging, setDragging] = useState(false);
+  const compact = useMediaQuery("(max-width: 860px)");
 
   const transfers = [...state.outgoing, ...state.incoming].sort(
     (a, b) => b.startedAt - a.startedAt,
@@ -70,7 +71,13 @@ export default function TransferPanel({ client, state }: Props) {
 
         <ul className="transfers">
           {transfers.map((transfer) => (
-            <TransferRow key={transfer.id} transfer={transfer} client={client} i18n={i18n} />
+            <TransferRow
+              key={transfer.id}
+              transfer={transfer}
+              client={client}
+              i18n={i18n}
+              cells={compact ? 20 : 10}
+            />
           ))}
         </ul>
 
@@ -106,16 +113,10 @@ export default function TransferPanel({ client, state }: Props) {
             ↓
           </span>
           <p className="dropzone__hint">{t("transfer.dropHere")}</p>
-          <button type="button" className="btn btn--primary" onClick={() => fileInput.current?.click()}>
+          <button type="button" className="btn btn--primary btn--block" onClick={() => fileInput.current?.click()}>
             {t("transfer.chooseFiles")}
           </button>
-          <input
-            ref={fileInput}
-            type="file"
-            multiple
-            hidden
-            onChange={(event) => pick(event.target.files)}
-          />
+          <input ref={fileInput} type="file" multiple hidden onChange={(event) => pick(event.target.files)} />
         </div>
 
         <form className="composer" onSubmit={submitText}>
@@ -142,9 +143,18 @@ export default function TransferPanel({ client, state }: Props) {
   );
 }
 
-/* ── CLI progress rows ─────────────────────────────────────────────────── */
+function useMediaQuery(query: string): boolean {
+  const [matches, setMatches] = useState(() => matchMedia(query).matches);
+  useEffect(() => {
+    const mq = matchMedia(query);
+    const onChange = () => setMatches(mq.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, [query]);
+  return matches;
+}
 
-const BAR_CELLS = 20;
+/* ── CLI progress rows ─────────────────────────────────────────────────── */
 
 interface RateState {
   at: number;
@@ -194,29 +204,38 @@ function formatEta(seconds: number): string {
   return `${m}:${String(sec).padStart(2, "0")}`;
 }
 
+/** "267/418 MB" — one unit, so the column stays narrow. */
+function formatPair(done: number, total: number): string {
+  const totalText = formatBytes(total);
+  const unit = totalText.split(" ")[1] ?? "";
+  const div = unit === "GB" ? 1e9 : unit === "MB" ? 1e6 : unit === "KB" || unit === "kB" ? 1e3 : 1;
+  const a = done / div;
+  const b = total / div;
+  const fmt = (n: number) => (n >= 100 || div === 1 ? Math.round(n).toString() : n.toFixed(1));
+  return `${fmt(a)}/${fmt(b)} ${unit}`.trim();
+}
+
 function TransferRow({
   transfer,
   client,
   i18n,
+  cells,
 }: {
   transfer: TransferView;
   client: GSendClient;
   i18n: Translator;
+  cells: number;
 }) {
   const { t } = i18n;
   const { rate, etaSeconds } = useRate(transfer);
 
   const pct = transfer.size > 0 ? Math.min(100, (transfer.transferred / transfer.size) * 100) : 0;
-  const filled = Math.round((pct / 100) * BAR_CELLS);
+  const filled = Math.round((pct / 100) * cells);
   const active = transfer.status === "active" || transfer.status === "pending";
   const stopped = transfer.status === "cancelled" || transfer.status === "error";
   const done = transfer.status === "done";
 
-  const fillClass = done
-    ? "bar__fill bar__fill--done"
-    : stopped
-      ? "bar__fill bar__fill--dim"
-      : "bar__fill";
+  const fillClass = done ? "bar__fill bar__fill--done" : stopped ? "bar__fill bar__fill--dim" : "bar__fill";
   const restChar = stopped ? "╳" : "░";
   const restClass = stopped ? "bar__rest bar__rest--dead" : "bar__rest";
 
@@ -224,50 +243,36 @@ function TransferRow({
     ? t(`cancel.${transfer.problem.code}`, { limit: transfer.problem.limit ?? 0 })
     : null;
 
-  const metaParts: string[] = [];
-  if (transfer.status === "active" && rate > 1) {
-    metaParts.push(`${formatBytes(rate)}/s`);
-    if (etaSeconds !== null) metaParts.push(`eta ${formatEta(etaSeconds)}`);
-  }
-  metaParts.push(`${formatBytes(transfer.transferred)} / ${formatBytes(transfer.size)}`);
-  if (done) metaParts.push(transfer.direction === "send" ? t("row.sent") : t("row.received"));
-  if (stopped) metaParts.push(problem ?? t("row.cancelled"));
-  if (transfer.status === "paused") metaParts.push(t("row.paused"));
-  if (transfer.status === "pending") metaParts.push(t("row.pending"));
+  // Three stat cells. Anything empty collapses on phones and leaves its column blank on desktop.
+  const live = transfer.status === "active" && rate > 1;
+  const rateText = live ? `${formatBytes(rate)}/s` : "";
+  const etaText = live && etaSeconds !== null ? `eta ${formatEta(etaSeconds)}` : "";
+  const statusText = done
+    ? transfer.direction === "send"
+      ? t("row.sent")
+      : t("row.received")
+    : stopped
+      ? (problem ?? t("row.cancelled"))
+      : transfer.status === "paused"
+        ? t("row.paused")
+        : transfer.status === "pending"
+          ? t("row.pending")
+          : "";
+  const bytesText = active && !statusText ? formatPair(transfer.transferred, transfer.size) : statusText;
 
   return (
     <li className={stopped ? "transfer transfer--dim" : "transfer"}>
-      <div className="transfer__head">
-        <span
-          className={
-            active && transfer.direction === "send"
-              ? "transfer__arrow transfer__arrow--live"
-              : "transfer__arrow"
-          }
-          aria-hidden="true"
-        >
-          {transfer.direction === "send" ? "↑" : "↓"}
-        </span>
-        <span className="transfer__name" title={transfer.name}>
-          {transfer.name}
-        </span>
-        {done && transfer.downloadUrl && (
-          <a className="btn btn--primary btn--tiny" href={transfer.downloadUrl} download={transfer.name}>
-            {t("transfer.save")}
-          </a>
-        )}
-        {active && (
-          <button
-            type="button"
-            className="btn btn--secondary btn--tiny"
-            onClick={() => client.cancelTransfer(transfer.id)}
-          >
-            {t("transfer.cancel")}
-          </button>
-        )}
-      </div>
+      <span
+        className={active && transfer.direction === "send" ? "transfer__arrow transfer__arrow--live" : "transfer__arrow"}
+        aria-hidden="true"
+      >
+        {transfer.direction === "send" ? "↑" : "↓"}
+      </span>
+      <span className="transfer__name" title={transfer.name}>
+        {transfer.name}
+      </span>
 
-      <div
+      <span
         className="transfer__bar"
         role="progressbar"
         aria-valuenow={Math.round(pct)}
@@ -276,12 +281,31 @@ function TransferRow({
       >
         <span className="bar" aria-hidden="true">
           <span className={fillClass}>{"█".repeat(filled)}</span>
-          <span className={restClass}>{restChar.repeat(BAR_CELLS - filled)}</span>
+          <span className={restClass}>{restChar.repeat(cells - filled)}</span>
         </span>
-        <span className="transfer__pct">{Math.floor(pct)}%</span>
-      </div>
+      </span>
+      <span className="transfer__pct">{Math.floor(pct)}%</span>
 
-      <div className="transfer__meta">{metaParts.join(" · ")}</div>
+      <span className="transfer__stats">
+        <span className="transfer__stat transfer__stat--rate">{rateText}</span>
+        <span className="transfer__stat transfer__stat--eta">{etaText}</span>
+        <span className="transfer__stat transfer__stat--bytes" title={bytesText}>
+          {bytesText}
+        </span>
+      </span>
+
+      <span className="transfer__action">
+        {done && transfer.downloadUrl && (
+          <a className="btn btn--primary btn--tiny" href={transfer.downloadUrl} download={transfer.name}>
+            {t("transfer.save")}
+          </a>
+        )}
+        {active && (
+          <button type="button" className="btn btn--secondary btn--tiny" onClick={() => client.cancelTransfer(transfer.id)}>
+            {t("transfer.cancel")}
+          </button>
+        )}
+      </span>
     </li>
   );
 }
