@@ -9,21 +9,21 @@
     <style>
       @import url("https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&family=Lora:wght@400;600&family=Noto+Serif+TC:wght@400;600&display=swap");
       :root {
-        --bg: #f3f2f2;
-        --surface: #eae9e9;
-        --border: color-mix(in srgb, #201f1d 16%, transparent);
-        --text: #201f1d;
-        --muted: color-mix(in srgb, #201f1d 68%, transparent);
-        --accent: #7d5411;
+        --bg: #ffffff;
+        --surface: #ffffff;
+        --border: #b9c2d6;
+        --text: #0b1220;
+        --muted: color-mix(in srgb, #0b1220 88%, transparent);
+        --accent: #06349c;
       }
       @media (prefers-color-scheme: dark) {
         :root {
-          --bg: #1c1a18;
-          --surface: #262321;
-          --border: color-mix(in srgb, #e9e4de 18%, transparent);
-          --text: #e9e4de;
-          --muted: color-mix(in srgb, #e9e4de 75%, transparent);
-          --accent: #dfb173;
+          --bg: #0b1220;
+          --surface: #131c30;
+          --border: color-mix(in srgb, #eef2fa 22%, transparent);
+          --text: #eef2fa;
+          --muted: color-mix(in srgb, #eef2fa 86%, transparent);
+          --accent: #9db8ff;
         }
       }
       * {
@@ -126,15 +126,16 @@
       </header>
 
       <h1>Privacy</h1>
-      <p class="updated">Last updated 1 September 2026</p>
+      <p class="updated">Last updated 2 September 2026</p>
 
       <div class="card">
         <h2>The short version</h2>
         <p>
           Your files and messages go straight from one device to the other. They are not
-          uploaded, not relayed, and not stored. The server's only job is to introduce the
-          two devices to each other, and it is deliberately built so that it could not read
-          your files even if it wanted to.
+          uploaded and not stored, and the server's only job is to introduce the two devices
+          to each other — it is deliberately built so that it could not read your files even
+          if it wanted to. When your two networks will not let the devices talk directly, an
+          encrypted relay passes the data along without being able to read it either.
         </p>
         <p>
           There are no accounts, no cookies, no analytics and no third-party trackers.
@@ -223,13 +224,14 @@
       <hr />
 
       <h1>隱私說明</h1>
-      <p class="updated">最後更新:2026 年 9 月 1 日</p>
+      <p class="updated">最後更新:2026 年 9 月 2 日</p>
 
       <div class="card">
         <h2>簡短版本</h2>
         <p>
-          你的檔案和訊息是從一台裝置直接傳到另一台,不會上傳、不經中轉、不被儲存。
+          你的檔案和訊息是從一台裝置直接傳到另一台,不會上傳、不被儲存。
           伺服器唯一的工作是讓兩台裝置認識彼此,而且它的設計讓它就算想看也讀不到你的檔案。
+          當雙方的網路不允許裝置直接連通時,會由加密中繼轉送,中繼同樣讀不到內容。
         </p>
         <p>沒有帳號、沒有 cookie、沒有分析工具、沒有第三方追蹤。</p>
       </div>

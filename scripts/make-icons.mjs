@@ -15,8 +15,8 @@ import { fileURLToPath } from "node:url";
 const OUT = join(dirname(fileURLToPath(import.meta.url)), "..", "public");
 
 /** Matches --color-accent in styles.css, so the icon and the app agree. */
-const FROM = [0xc2, 0x8d, 0x41];
-const TO = [0x9b, 0x6f, 0x24];
+const FROM = [0x0a, 0x4f, 0xe8];
+const TO = [0x05, 0x26, 0x74];
 
 /** Each pixel is averaged over this many samples per axis to get clean edges. */
 const SAMPLES = 4;
