@@ -8,7 +8,6 @@ import {
   type PeerControl,
   type TransferProblem,
 } from "./protocol";
-import type { Message } from "../i18n/strings";
 import type { StoredTransfer } from "./session-store";
 import {
   canAccept,
@@ -45,6 +44,8 @@ export interface TransferView {
   direction: Direction;
   problem?: TransferProblem;
   downloadUrl?: string;
+  /** Set when the file went straight into the person's own folder, under this name. */
+  savedAs?: string;
   startedAt: number;
   updatedAt: number;
 }
@@ -78,6 +79,7 @@ interface IncomingTransfer {
   status: TransferStatus;
   problem?: TransferProblem;
   downloadUrl?: string;
+  savedAs?: string;
   startedAt: number;
   updatedAt: number;
   lastAckAt: number;
@@ -122,6 +124,25 @@ export class TransferEngine {
         size: stored.size,
         mime: stored.mime,
       };
+
+      if (stored.savedAs) {
+        // This one was streamed into the person's own folder. A finished file is
+        // already sitting there, so the row comes back for the record; an unfinished
+        // one is gone, because the browser only commits those writes on close.
+        if (!stored.done) continue;
+        this.incoming.set(stored.id, {
+          meta,
+          sink: createCompletedSink(stored.savedAs),
+          received: stored.size,
+          status: "done",
+          savedAs: stored.savedAs,
+          startedAt: now,
+          updatedAt: now,
+          lastAckAt: 0,
+          lastAckBytes: 0,
+        });
+        continue;
+      }
 
       if (stored.done) {
         // Finished before the reload and never saved. The bytes are still on disk, so
@@ -177,6 +198,7 @@ export class TransferEngine {
         size: transfer.meta.size,
         mime: transfer.meta.mime,
         done: transfer.status === "done",
+        savedAs: transfer.savedAs,
       });
     }
     return rows;
@@ -278,23 +300,23 @@ export class TransferEngine {
       direction: "receive" as const,
       problem: t.problem,
       downloadUrl: t.downloadUrl,
+      savedAs: t.savedAs,
       startedAt: t.startedAt,
       updatedAt: t.updatedAt,
     }));
   }
 
-  sendFiles(files: File[]): Message | null {
-    const limit = maxFileBytes();
-    const limitMb = Math.round(limit / 1024 / 1024);
-    const accepted = files.filter((file) => file.size <= limit);
-    const rejected = files.length - accepted.length;
-    if (accepted.length === 0) {
-      return rejected > 0 ? { key: "notice.allTooLarge", params: { limit: limitMb } } : null;
-    }
+  /**
+   * Sending reads from disk and stores nothing, so nothing here depends on how much
+   * room this device has. Only the receiver can judge whether a file will fit, and it
+   * refuses on its own terms in `onOffer`.
+   */
+  sendFiles(files: File[]): void {
+    if (files.length === 0) return;
 
     const batchId = randomId();
     const now = Date.now();
-    const metas: FileMeta[] = accepted.map((file) => ({
+    const metas: FileMeta[] = files.map((file) => ({
       id: randomId(),
       wireId: this.nextWireId++,
       name: file.name,
@@ -305,7 +327,7 @@ export class TransferEngine {
     metas.forEach((meta, index) => {
       this.outgoing.set(meta.id, {
         meta,
-        file: accepted[index],
+        file: files[index],
         batchId,
         sent: 0,
         acked: 0,
@@ -319,9 +341,6 @@ export class TransferEngine {
     this.callbacks.sendControl({ t: "offer", batchId, files: metas });
     this.callbacks.onChange();
     this.callbacks.onTransfersChanged();
-    return rejected > 0
-      ? { key: "notice.skipped", params: { count: rejected, limit: limitMb } }
-      : null;
   }
 
   sendText(body: string): void {
@@ -450,7 +469,7 @@ export class TransferEngine {
 
       this.incoming.set(meta.id, {
         meta,
-        sink: await createSink(meta.id),
+        sink: await createSink(meta.id, meta.name),
         received: 0,
         status: "active",
         startedAt: now,
@@ -648,7 +667,10 @@ export class TransferEngine {
   private async completeIncoming(fileId: string, transfer: IncomingTransfer): Promise<void> {
     try {
       const blob = await transfer.sink.finish(transfer.meta.mime);
-      transfer.downloadUrl = URL.createObjectURL(blob);
+      // A null blob means the bytes went straight into the person's folder; there is
+      // nothing to hand back, only the name to tell them where to look.
+      if (blob) transfer.downloadUrl = URL.createObjectURL(blob);
+      else transfer.savedAs = transfer.sink.savedAs ?? transfer.meta.name;
       transfer.status = "done";
       transfer.updatedAt = Date.now();
       this.wireIndex.delete(transfer.meta.wireId);

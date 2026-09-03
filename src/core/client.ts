@@ -11,6 +11,7 @@ import {
 import type { Message } from "../i18n/strings";
 import { PeerLink, STUN_ONLY, type PeerChannels, type PeerState } from "./peer";
 import { clearSession, loadSession, saveSession } from "./session-store";
+import { chooseSaveDirectory, forgetSaveDirectory, saveDirectoryName } from "./sink";
 import { Signaling } from "./signaling";
 import { TransferEngine, type TextMessage, type TransferView } from "./transfer";
 
@@ -22,8 +23,6 @@ export type Phase =
   | "pairing"
   | "active"
   | "ended";
-
-export type Approval = "pending" | "granted" | "rejected";
 
 export interface Snapshot {
   phase: Phase;
@@ -37,13 +36,16 @@ export interface Snapshot {
   connection: PeerState;
   /** True once this session brought the relay into play (billable path). */
   relayEngaged: boolean;
-  approval: Approval;
   channelsOpen: boolean;
+  /** The folder incoming files are being written into, when one was chosen. */
+  savingTo: string | null;
+  /** When the other device came through, so the sender can see it happen. */
+  peerJoinedAt: number | null;
   outgoing: TransferView[];
   incoming: TransferView[];
   texts: TextMessage[];
-  /** Files handed over by the share sheet, waiting for a peer to connect. */
-  pendingShare: { files: number; text: boolean } | null;
+  /** Staged before the code was created, waiting for a peer to connect. */
+  pendingShare: { files: number; bytes: number; text: boolean } | null;
   notice: Message | null;
   error: Message | null;
 }
@@ -103,8 +105,8 @@ export class GSendClient {
   private peerPresent = false;
   private peerAbsentSince: number | null = null;
   private connection: PeerState = "new";
-  private approval: Approval = "pending";
   private channelsOpen = false;
+  private peerJoinedAt: number | null = null;
   private texts: TextMessage[] = [];
   private pendingFiles: File[] = [];
   private pendingText: string | null = null;
@@ -167,10 +169,19 @@ export class GSendClient {
 
   // --- commands ------------------------------------------------------------
 
-  host(): void {
+  /**
+   * Reserve a code for the files and text already picked. Choosing first and pairing
+   * second is what lets the other device receive on arrival: by the time it joins, the
+   * queue is known and the transfer can start the moment the channels open. Calling
+   * this with nothing staged is still valid — it opens a session to receive into.
+   */
+  host(files: File[] = [], text: string | null = null): void {
     this.resetSession();
     this.phase = "creating";
     this.role = "host";
+    // Set after resetSession, which would otherwise clear them.
+    this.pendingFiles = files;
+    this.pendingText = text;
     this.emitNow();
     this.signaling.connect({ role: "host" });
   }
@@ -200,7 +211,6 @@ export class GSendClient {
       sessionKey: stored.sessionKey,
       role: stored.role,
     };
-    this.approval = stored.approved ? "granted" : "pending";
     this.phase = "pairing";
     this.reconnectDeadline = Date.now() + RESUME_GRACE_MS;
     this.persist();
@@ -217,24 +227,25 @@ export class GSendClient {
 
   /**
    * Take files from the system share sheet. Sharing to GSend is a statement of intent,
-   * so an idle app opens a session immediately and shows the code; the files then go
-   * the moment the other device is approved.
+   * so an idle app opens a session for them immediately and shows the code.
    */
   stageShared(files: File[], text: string | null): void {
-    if (this.phase === "idle") this.host();
-
-    // Set after host(), which resets the session and would otherwise clear these.
+    if (this.phase === "idle") {
+      this.host(files, text);
+      return;
+    }
     this.pendingFiles = files;
     this.pendingText = text;
     this.flushPendingShare();
     this.emitNow();
   }
 
+  /** The queue goes out as soon as there is something to carry it. */
   private flushPendingShare(): void {
-    if (this.approval !== "granted") return;
+    if (!this.channelsOpen) return;
 
     if (this.pendingFiles.length > 0) {
-      this.notice = this.transfer.sendFiles(this.pendingFiles);
+      this.transfer.sendFiles(this.pendingFiles);
       this.pendingFiles = [];
     }
     if (this.pendingText !== null) {
@@ -243,32 +254,47 @@ export class GSendClient {
     }
   }
 
-  approve(): void {
-    if (this.role !== "host" || this.approval !== "pending") return;
-    this.peer?.sendControl(JSON.stringify({ t: "approve" }));
-    this.approval = "granted";
-    this.phase = "active";
-    this.persist();
-    this.flushPendingShare();
-    this.emitNow();
-  }
-
-  reject(): void {
-    if (this.role !== "host") return;
-    this.peer?.sendControl(JSON.stringify({ t: "reject" }));
-    this.end({ key: "error.declinedByYou" });
-  }
-
   sendFiles(files: File[]): void {
-    if (this.approval !== "granted") return;
-    this.notice = this.transfer.sendFiles(files);
+    if (!this.channelsOpen) {
+      // Queued rather than dropped: the connection may still be coming up.
+      this.pendingFiles = [...this.pendingFiles, ...files];
+      this.emitNow();
+      return;
+    }
+    this.transfer.sendFiles(files);
     this.emitNow();
   }
 
   sendText(body: string): void {
     const trimmed = body.trim();
-    if (!trimmed || this.approval !== "granted") return;
+    if (!trimmed) return;
+    if (!this.channelsOpen) {
+      this.pendingText = this.pendingText ? `${this.pendingText}
+${trimmed}` : trimmed;
+      this.emitNow();
+      return;
+    }
     this.transfer.sendText(trimmed);
+  }
+
+  /**
+   * Pick where arriving files should be written. Must be called straight from a click:
+   * the picker needs transient user activation. Files already in flight keep the sink
+   * they started with; everything offered afterwards goes to the new folder.
+   */
+  async chooseFolder(): Promise<void> {
+    const folder = await chooseSaveDirectory();
+    if (folder) this.notice = null;
+    this.emitNow();
+  }
+
+  /**
+   * Raised on the receiving side when no folder was picked, so the person knows their
+   * files are landing in browser storage with a ceiling on them.
+   */
+  noticeStorageFallback(size: string): void {
+    this.notice = { key: "notice.noFolder", params: { size } };
+    this.emitNow();
   }
 
   cancelTransfer(fileId: string): void {
@@ -359,9 +385,9 @@ export class GSendClient {
     this.persist();
 
     // A signalling reconnect says nothing about the peer connection, which usually
-    // outlives it. Knocking an approved, connected session back to "pairing" here hid
-    // the transfer list while bytes were still arriving underneath it.
-    const established = this.approval === "granted" && this.channelsOpen;
+    // outlives it. Knocking a connected session back to "pairing" here hid the
+    // transfer list while bytes were still arriving underneath it.
+    const established = this.channelsOpen;
     if (established) {
       this.phase = "active";
       // The bar was left saying "Reconnecting" by the signalling drop even though the
@@ -574,11 +600,8 @@ export class GSendClient {
         this.transfer.detach();
         this.emitNow();
       },
-      onControlMessage: (raw) => this.onPeerControl(raw),
-      onDataFrame: (frame) => {
-        if (this.approval !== "granted") return;
-        this.transfer.handleFrame(frame);
-      },
+      onControlMessage: (raw) => this.transfer.handleControl(raw),
+      onDataFrame: (frame) => this.transfer.handleFrame(frame),
     }, forceRelay);
 
     this.peer.start();
@@ -651,8 +674,12 @@ export class GSendClient {
       }, PATH_SETTLE_MS);
     }
 
-    // The guest cannot do anything until the host presses Approve (PLAN.md §2).
-    this.phase = this.approval === "granted" ? "active" : "pairing";
+    // Open channels are the whole gate now: whoever staged something sends it here,
+    // and the other side is already receiving into the folder it picked.
+    this.phase = "active";
+    this.peerJoinedAt ??= Date.now();
+    this.persist();
+    this.flushPendingShare();
     this.emitNow();
   }
 
@@ -678,33 +705,6 @@ export class GSendClient {
     let path: ConnectionPath = "unknown";
     if (outcome === "connected" && this.peer) path = await this.peer.describePath();
     this.signaling.send({ t: "stat", outcome, path });
-  }
-
-  private onPeerControl(raw: string): void {
-    let msg: { t?: string };
-    try {
-      msg = JSON.parse(raw) as { t?: string };
-    } catch {
-      return;
-    }
-
-    if (msg.t === "approve") {
-      this.approval = "granted";
-      this.phase = "active";
-      this.persist();
-      this.flushPendingShare();
-      this.emitNow();
-      return;
-    }
-
-    if (msg.t === "reject") {
-      this.end({ key: "error.declinedByPeer" });
-      return;
-    }
-
-    // Nothing else is honoured until the session is unlocked.
-    if (this.approval !== "granted") return;
-    this.transfer.handleControl(raw);
   }
 
   // --- page lifecycle ------------------------------------------------------
@@ -766,6 +766,8 @@ export class GSendClient {
 
   reset(): void {
     this.resetSession();
+    // The grant lasts until someone deliberately goes back to the beginning.
+    forgetSaveDirectory();
     this.phase = "idle";
     this.emitNow();
   }
@@ -785,8 +787,8 @@ export class GSendClient {
     this.peerPresent = false;
     this.peerAbsentSince = null;
     this.connection = "new";
-    this.approval = "pending";
     this.channelsOpen = false;
+    this.peerJoinedAt = null;
     this.texts = [];
     this.pendingFiles = [];
     this.pendingText = null;
@@ -810,7 +812,6 @@ export class GSendClient {
       code: this.credentials.code,
       sessionKey: this.credentials.sessionKey,
       role: this.credentials.role,
-      approved: this.approval === "granted",
       incoming: this.transfer.persistableIncoming(),
       outgoing: this.transfer.persistableOutgoing(),
     });
@@ -867,14 +868,19 @@ export class GSendClient {
       peerAbsentSince: this.peerAbsentSince,
       connection: this.connection,
       relayEngaged: this.relayNeeded,
-      approval: this.approval,
       channelsOpen: this.channelsOpen,
+      savingTo: saveDirectoryName(),
+      peerJoinedAt: this.peerJoinedAt,
       outgoing: this.transfer.snapshotOutgoing(),
       incoming: this.transfer.snapshotIncoming(),
       texts: this.texts,
       pendingShare:
         this.pendingFiles.length > 0 || this.pendingText
-          ? { files: this.pendingFiles.length, text: this.pendingText !== null }
+          ? {
+              files: this.pendingFiles.length,
+              bytes: this.pendingFiles.reduce((sum, file) => sum + file.size, 0),
+              text: this.pendingText !== null,
+            }
           : null,
       notice: this.notice,
       error: this.error,

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { GSendClient, Snapshot } from "../core/client";
-import { formatBytes } from "../core/sink";
+import { directPickerSupported, formatBytes, maxFileBytes } from "../core/sink";
 import type { TransferView } from "../core/transfer";
 import { useI18n, type Translator } from "../i18n";
 
@@ -15,6 +15,7 @@ export default function TransferPanel({ client, state }: Props) {
   const fileInput = useRef<HTMLInputElement>(null);
   const [draft, setDraft] = useState("");
   const [dragging, setDragging] = useState(false);
+  const [joinDismissed, setJoinDismissed] = useState(false);
   const compact = useMediaQuery("(max-width: 860px)");
 
   const transfers = [...state.outgoing, ...state.incoming].sort(
@@ -62,6 +63,32 @@ export default function TransferPanel({ client, state }: Props) {
             })}
           </span>
         </div>
+
+        {/*
+          What replaced the approval screen: the sender is told the instant a device is
+          through, with the kill switch in the same breath rather than a step earlier.
+        */}
+        {state.role === "host" && state.channelsOpen && !joinDismissed && (
+          <p className="alert" style={{ marginBottom: 14 }}>
+            {t("transfer.peerJoined")}
+            <button
+              type="button"
+              className="btn btn--danger btn--tiny"
+              style={{ marginLeft: 10 }}
+              onClick={() => client.leave()}
+            >
+              {t("transfer.stop")}
+            </button>
+            <button
+              type="button"
+              className="btn btn--ghost btn--tiny"
+              style={{ marginLeft: 6 }}
+              onClick={() => setJoinDismissed(true)}
+            >
+              {t("transfer.dismiss")}
+            </button>
+          </p>
+        )}
 
         {state.notice && (
           <p className="alert alert--soft" style={{ marginBottom: 14 }} onClick={() => client.dismissNotice()}>
@@ -132,15 +159,43 @@ export default function TransferPanel({ client, state }: Props) {
           </button>
         </form>
 
-        <div className="term term--muted">
-          {`peer    ${state.relayEngaged ? "relay · turn" : "direct"}\nlimit   1 GB / file\ncode    ${state.code ?? "----"} · burned`}
-        </div>
+        {!state.savingTo && directPickerSupported() && (
+          <button
+            type="button"
+            className="btn btn--secondary btn--block"
+            onClick={() => void client.chooseFolder()}
+          >
+            {t("transfer.chooseFolder")}
+          </button>
+        )}
+
+        <div className="term term--muted">{statusBlock(state, t("transfer.limitDisk"))}</div>
 
         <hr className="hr" style={{ margin: "2px 0" }} />
-        <p className="aside-note">{t("transfer.persistNote")}</p>
+        <p className="aside-note">
+          {state.savingTo
+            ? t("transfer.saveFolder", { folder: state.savingTo })
+            : t("transfer.saveBrowser")}
+        </p>
       </aside>
     </section>
   );
+}
+
+/**
+ * The mono blocks are deliberately untranslated — they are the design's CLI voice —
+ * except for the one word that has to say whether the ceiling is a number or the disk.
+ */
+function statusBlock(state: Snapshot, diskWord: string): string {
+  const peer = state.relayEngaged ? "relay · turn" : "direct";
+  const where = state.savingTo ?? "browser";
+  const ceiling = state.savingTo ? diskWord : `${formatBytes(maxFileBytes())} / file`;
+  return [
+    `peer    ${peer}`,
+    `saving  ${where}`,
+    `limit   ${ceiling}`,
+    `code    ${state.code ?? "----"} · burned`,
+  ].join("\n");
 }
 
 function useMediaQuery(query: string): boolean {
@@ -295,6 +350,11 @@ function TransferRow({
       </span>
 
       <span className="transfer__action">
+        {done && transfer.savedAs && (
+          <span className="transfer__saved" title={transfer.savedAs}>
+            {t("row.savedTo", { name: transfer.savedAs })}
+          </span>
+        )}
         {done && transfer.downloadUrl && (
           <a className="btn btn--primary btn--tiny" href={transfer.downloadUrl} download={transfer.name}>
             {t("transfer.save")}

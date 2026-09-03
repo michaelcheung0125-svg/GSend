@@ -462,6 +462,15 @@ body {
 
 .transfer__action { grid-area: action; min-width: 56px; display: flex; justify-content: flex-end; }
 
+/* Files written straight to the person's folder need no button, only a place name. */
+.transfer__saved {
+  color: var(--ink-50);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .message {
   display: flex;
   align-items: center;

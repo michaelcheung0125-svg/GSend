@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import QRCode from "qrcode";
 import type { GSendClient, Snapshot } from "../core/client";
+import { formatBytes } from "../core/sink";
 import { useI18n } from "../i18n";
 
 interface Props {
@@ -80,13 +81,16 @@ export default function HostPanel({ client, state }: Props) {
           </span>
         </div>
 
-        {state.pendingShare && (
-          <p className="alert alert--soft" style={{ marginTop: 20 }}>
-            {state.pendingShare.files > 0
-              ? t("host.sharePendingFiles", { count: state.pendingShare.files })
-              : t("host.sharePendingText")}
-          </p>
-        )}
+        <p className="alert alert--soft" style={{ marginTop: 20 }}>
+          {!state.pendingShare
+            ? t("host.queuedNothing")
+            : state.pendingShare.files > 0
+              ? t("host.queuedFiles", {
+                  count: state.pendingShare.files,
+                  size: formatBytes(state.pendingShare.bytes),
+                })
+              : t("host.queuedText")}
+        </p>
 
         <p className="sub" style={{ marginTop: 22, maxWidth: "52ch" }}>
           {t("host.burnNote")}

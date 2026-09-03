@@ -42,9 +42,6 @@ export interface FileMeta {
 }
 
 export type PeerControl =
-  /** Host unlocks the session after seeing that a device joined (PLAN.md §2). */
-  | { t: "approve" }
-  | { t: "reject" }
   | { t: "offer"; batchId: string; files: FileMeta[] }
   | { t: "accept"; batchId: string; offsets: Record<string, number> }
   | { t: "decline"; batchId: string; reason: string }

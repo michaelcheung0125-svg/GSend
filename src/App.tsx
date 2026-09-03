@@ -55,9 +55,13 @@ export default function App() {
     client.restore();
   }, []);
 
-  const unlocked = state.approval === "granted";
   const pairing = state.phase === "joining" || state.phase === "pairing";
   const inSession = state.phase !== "idle" && state.phase !== "ended";
+  // A restored or reconnecting session is still "pairing" while it re-attaches, and it
+  // may already be holding files. Anything with contents shows the list, not the wait.
+  const hasContents =
+    state.incoming.length > 0 || state.outgoing.length > 0 || state.texts.length > 0;
+  const showTransfers = state.phase === "active" || (pairing && hasContents);
 
   return (
     <div className="app">
@@ -93,15 +97,13 @@ export default function App() {
         {(state.phase === "creating" || state.phase === "hosting") && (
           <HostPanel client={client} state={state} />
         )}
-        {pairing && !unlocked && <PairingPanel client={client} state={state} />}
+        {pairing && !showTransfers && <PairingPanel client={client} state={state} />}
         {/*
-          Once the session is unlocked the panel stays up even while the connection is
-          degraded. A received file lives in this list until it is saved, so hiding it
-          on a dropped connection loses the file.
+          The panel stays up even while the connection is degraded. A received file on
+          the browser-storage path lives in this list until it is saved, so hiding it on
+          a dropped connection loses the file.
         */}
-        {(state.phase === "active" || (pairing && unlocked)) && (
-          <TransferPanel client={client} state={state} />
-        )}
+        {showTransfers && <TransferPanel client={client} state={state} />}
         {state.phase === "ended" && <EndedScreen state={state} i18n={i18n} />}
       </main>
 

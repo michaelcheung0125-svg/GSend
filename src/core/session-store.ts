@@ -11,13 +11,18 @@ export interface StoredTransfer {
   mime: string;
   /** Complete and waiting to be saved, rather than still arriving. */
   done: boolean;
+  /**
+   * Set when the bytes went straight into the folder the person picked, under this
+   * name. Those writes are committed by the browser only when the stream closes, so a
+   * record carrying this can be shown again but never resumed.
+   */
+  savedAs?: string;
 }
 
 export interface StoredSession {
   code: string;
   sessionKey: string;
   role: Role;
-  approved: boolean;
   savedAt: number;
   /** In-flight receives, whose bytes are waiting in the origin-private filesystem. */
   incoming: StoredTransfer[];
