@@ -452,8 +452,12 @@ ${trimmed}` : trimmed;
    * they started with; everything offered afterwards goes to the new folder.
    */
   async chooseFolder(): Promise<void> {
-    const folder = await chooseSaveDirectory();
-    if (folder) this.notice = null;
+    const choice = await chooseSaveDirectory();
+    // Coming back from the picker with nothing usually means the browser refused the
+    // folder for holding system files. It says so inside its own dialog and then
+    // vanishes, so this is the only place left to explain what to pick instead.
+    if (choice.picked) this.notice = null;
+    else if (choice.dismissed) this.notice = { key: "notice.folderBlocked" };
     this.emitNow();
   }
 
@@ -461,8 +465,12 @@ ${trimmed}` : trimmed;
    * Raised on the receiving side when no folder was picked, so the person knows their
    * files are landing in browser storage with a ceiling on them.
    */
-  noticeStorageFallback(size: string): void {
-    this.notice = { key: "notice.noFolder", params: { size } };
+  noticeStorageFallback(size: string, dismissed = false): void {
+    // Someone who opened the picker and closed it again may have been refused rather
+    // than have changed their mind, and that is worth saying before the size ceiling.
+    this.notice = dismissed
+      ? { key: "notice.folderBlocked" }
+      : { key: "notice.noFolder", params: { size } };
     this.emitNow();
   }
 

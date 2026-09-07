@@ -134,15 +134,23 @@ export function directPickerSupported(): boolean {
 }
 
 /**
+ * The outcome of asking for a folder. Dismissal is reported separately from "this
+ * browser has no picker", because the two need different things said about them: the
+ * browser refuses some folders outright, and someone who came away empty-handed has
+ * probably just hit that wall with no explanation of it.
+ */
+export type FolderChoice =
+  | { picked: true; name: string }
+  | { picked: false; dismissed: boolean };
+
+/**
  * Ask for a folder to write into. This has to be called straight out of a click:
  * the picker needs transient user activation, which expires within seconds, so there
  * is no way to defer it until the connection is up and the file list is known.
- *
- * Returns the folder's name, or null if the person dismissed the dialog.
  */
-export async function chooseSaveDirectory(): Promise<string | null> {
+export async function chooseSaveDirectory(): Promise<FolderChoice> {
   const picker = (globalThis as unknown as DirectoryPicker).showDirectoryPicker;
-  if (!picker) return null;
+  if (!picker) return { picked: false, dismissed: false };
   try {
     // `id` makes the browser reopen where this app was last used rather than at the
     // top of the filesystem, which is most of the friction in a folder picker.
@@ -152,10 +160,13 @@ export async function chooseSaveDirectory(): Promise<string | null> {
     // devices receive without anyone pressing anything, and a destination that has to
     // be re-picked every time would put the click straight back.
     await dbPut(FOLDER_KEY, handle).catch(() => undefined);
-    return handle.name;
-  } catch {
-    // Dismissed, or blocked by policy. The OPFS path still works.
-    return null;
+    return { picked: true, name: handle.name };
+  } catch (error) {
+    // Closing the dialog empty-handed is an AbortError, and it is also what happens
+    // after the browser refuses a folder for holding system files — the refusal is
+    // shown inside the picker, so this is the only point at which we can say anything
+    // about it. The OPFS path still works either way.
+    return { picked: false, dismissed: (error as DOMException).name === "AbortError" };
   }
 }
 

@@ -78,9 +78,11 @@ export default function Landing({ client, state, prefill }: Props) {
     if (code.length !== CODE_LENGTH) return;
 
     const ceiling = formatBytes(maxFileBytes());
-    const folder = directPickerSupported() ? await chooseSaveDirectory() : null;
+    const choice = directPickerSupported()
+      ? await chooseSaveDirectory()
+      : ({ picked: false, dismissed: false } as const);
     client.join(code);
-    if (!folder) client.noticeStorageFallback(ceiling);
+    if (!choice.picked) client.noticeStorageFallback(ceiling, choice.dismissed);
   };
 
   const stagedBytes = files.reduce((sum, file) => sum + file.size, 0);
@@ -102,6 +104,16 @@ export default function Landing({ client, state, prefill }: Props) {
         {state.error && (
           <p className="alert" style={{ marginBottom: 20, maxWidth: "46ch" }}>
             {tm(state.error)}
+          </p>
+        )}
+
+        {state.notice && (
+          <p
+            className="alert alert--soft"
+            style={{ marginBottom: 20, maxWidth: "52ch" }}
+            onClick={() => client.dismissNotice()}
+          >
+            {tm(state.notice)}
           </p>
         )}
 

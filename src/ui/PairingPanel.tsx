@@ -8,7 +8,7 @@ interface Props {
 }
 
 export default function PairingPanel({ client, state }: Props) {
-  const { t } = useI18n();
+  const { t, tm } = useI18n();
 
   // An open data channel outranks a stale departure notice from signalling.
   const waitingForPeer = state.peerAbsentSince !== null && !state.channelsOpen;
@@ -61,6 +61,11 @@ export default function PairingPanel({ client, state }: Props) {
         <span style={{ color: "var(--ink-55)" }}>ICE</span>
       </div>
       <div className="term term--muted">{statusLines}</div>
+      {state.notice && (
+        <p className="alert alert--soft" onClick={() => client.dismissNotice()}>
+          {tm(state.notice)}
+        </p>
+      )}
       {state.connection === "failed" && <p className="alert">{t("pairing.noDirectRoute")}</p>}
     </section>
   );
