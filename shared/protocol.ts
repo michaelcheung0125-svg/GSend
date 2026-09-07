@@ -25,6 +25,52 @@ export const JOIN_ATTEMPT_WINDOW_MS = 60_000;
 /** Signalling payloads are SDP and ICE candidates only; anything larger is abuse. */
 export const MAX_SIGNAL_BYTES = 64 * 1024;
 
+// --- paired devices ---------------------------------------------------------
+
+/**
+ * How long one derived rendezvous name stays in use. Deriving it once and for all
+ * would hand the server a permanent identifier for a person's set of devices; rotating
+ * it means the name says nothing beyond "these sockets belong together right now".
+ *
+ * The window is long because devices only agree by having roughly the same clock, and
+ * short because that is the whole point. Six hours is far more than browser clock skew
+ * and far less than a useful tracking horizon.
+ */
+export const GROUP_WINDOW_MS = 6 * 60 * 60_000;
+
+/** Domain separator, so the derived name can never collide with another use of the key. */
+export const RENDEZVOUS_LABEL = "gsend-rendezvous-v1:";
+
+/** A rendezvous room holds one person's devices, not a crowd. */
+export const MAX_GROUP_DEVICES = 8;
+
+/** Rendezvous names are a full HMAC-SHA256 in hex; device ids are a truncated hash. */
+export function isRendezvousName(name: string): boolean {
+  return /^[0-9a-f]{64}$/.test(name);
+}
+
+export function isDeviceId(id: string): boolean {
+  return /^[0-9a-f]{16}$/.test(id);
+}
+
+/** Who else is in the rendezvous room. Identity is proved peer to peer, not here. */
+export interface GroupPeer {
+  id: string;
+}
+
+export type GroupServerMessage =
+  /** Sent on arrival: everyone already in the room. */
+  | { t: "group"; self: string; peers: GroupPeer[] }
+  | { t: "joined"; peer: GroupPeer }
+  | { t: "left"; peer: string }
+  | { t: "from"; peer: string; data: unknown }
+  | { t: "ice"; iceServers: IceServer[] }
+  | { t: "error"; code: ServerErrorCode; message: string };
+
+export type GroupClientMessage =
+  | { t: "to"; peer: string; data: unknown }
+  | { t: "ice" };
+
 export type Role = "host" | "guest";
 
 export type ServerErrorCode =

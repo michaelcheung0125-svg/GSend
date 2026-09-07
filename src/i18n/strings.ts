@@ -106,8 +106,33 @@ export const en = {
 
   "notice.noFolder":
     "No folder picked, so files land in this browser's storage — up to {size} each, and you save them by hand.",
+  "notice.regrouped":
+    "This device joined the other one's group. {count} device(s) it knew before are in the old group and need pairing again.",
+
+  "devices.title": "Your devices",
+  "devices.thisDevice": "This device",
+  "devices.online": "online",
+  "devices.offline": "offline",
+  "devices.send": "Send",
+  "devices.connect": "Connect",
+  "devices.rename": "Rename",
+  "devices.unpair": "Unpair",
+  "devices.unpairAll": "Forget every device",
+  "devices.none":
+    "No paired devices yet. Pair one with a code below — just once — and it appears here from then on.",
+  "devices.offlineNote": "A device shows up here while this page is open on it.",
+  "devices.connecting": "Connecting to {name}…",
+  "devices.verifying": "Checking that this really is {name}…",
+  "devices.notRemembered":
+    "This browser will not keep a durable store, so devices cannot be remembered here. Private browsing is the usual reason.",
+  "devices.namePrompt": "Name this device",
+  "devices.savingTo": "Files sent to this device go straight into {folder}.",
+  "devices.savingNowhere":
+    "Files sent to this device wait in the browser until you save them. Pick a folder and they land in it on their own.",
+  "devices.changeFolder": "Change",
 
   "error.badCode": "Enter the 4 digits shown on the other device.",
+  "error.unknownDevice": "That device could not prove which device it is, so nothing was sent.",
   "error.stopped": "You stopped the session.",
   "error.nobodyJoined": "Nobody joined in time. Start a new session.",
   "error.peerEnded": "The other device ended the session.",
@@ -232,8 +257,29 @@ export const zh: Record<MessageKey, string> = {
   "row.progress": "{percent}% · {transferred}",
 
   "notice.noFolder": "沒有選資料夾,檔案會先收進這個瀏覽器的儲存空間——每個檔案上限 {size},而且要自己按儲存。",
+  "notice.regrouped": "這台裝置改加入了對方的裝置群組。原本認識的 {count} 台留在舊群組,需要重新配對一次。",
+
+  "devices.title": "你的裝置",
+  "devices.thisDevice": "這台裝置",
+  "devices.online": "在線",
+  "devices.offline": "離線",
+  "devices.send": "傳送",
+  "devices.connect": "連線",
+  "devices.rename": "重新命名",
+  "devices.unpair": "解除配對",
+  "devices.unpairAll": "忘記所有裝置",
+  "devices.none": "還沒有配對過的裝置。用下面的數字碼配對一次,之後它就會固定出現在這裡。",
+  "devices.offlineNote": "裝置只要開著這個頁面,就會出現在這份清單上。",
+  "devices.connecting": "正在連線到「{name}」…",
+  "devices.verifying": "正在確認對方真的是「{name}」…",
+  "devices.notRemembered": "這個瀏覽器不提供持久儲存空間,所以無法記住裝置。通常是因為無痕模式。",
+  "devices.namePrompt": "為這台裝置命名",
+  "devices.savingTo": "傳到這台裝置的檔案會直接寫進「{folder}」。",
+  "devices.savingNowhere": "傳到這台裝置的檔案會先留在瀏覽器裡等你儲存。選一個資料夾,之後就會自動落到那裡。",
+  "devices.changeFolder": "更改",
 
   "error.badCode": "請輸入另一台裝置上顯示的 4 位數字。",
+  "error.unknownDevice": "對方無法證明自己是哪一台裝置,所以沒有傳送任何東西。",
   "error.stopped": "你中止了這次連線。",
   "error.nobodyJoined": "沒有人在時限內加入。請重新建立連線。",
   "error.peerEnded": "另一台裝置結束了這個連線。",

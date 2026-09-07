@@ -8,6 +8,7 @@ import {
   prepareStorage,
 } from "../core/sink";
 import { useI18n } from "../i18n";
+import DeviceList from "./DeviceList";
 
 interface Props {
   client: GSendClient;
@@ -178,6 +179,10 @@ export default function Landing({ client, state, prefill }: Props) {
       <div className="screen__rule" aria-hidden="true" />
 
       <div>
+        <DeviceList client={client} state={state} files={files} text={draft} />
+
+        <hr className="hr" />
+
         <h4 className="side-title">{t("landing.orJoin")}</h4>
         <p className="sub" style={{ marginBottom: 20 }}>
           {t("landing.joinSub")}

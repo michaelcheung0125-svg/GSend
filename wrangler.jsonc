@@ -16,6 +16,7 @@
   "durable_objects": {
     "bindings": [
       { "name": "SESSION", "class_name": "SessionRoom" },
+      { "name": "DEVICE_GROUP", "class_name": "DeviceGroup" },
       { "name": "JOIN_GUARD", "class_name": "JoinGuard" },
       { "name": "METRICS", "class_name": "Metrics" }
     ]
@@ -29,6 +30,12 @@
     {
       "tag": "v2",
       "new_sqlite_classes": ["Metrics"]
+    },
+    {
+      // The rendezvous room for paired devices. It holds only cached relay
+      // credentials, which its own alarm clears once they expire.
+      "tag": "v3",
+      "new_sqlite_classes": ["DeviceGroup"]
     }
   ],
   "observability": { "enabled": true }

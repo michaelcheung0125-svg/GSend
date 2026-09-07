@@ -1,6 +1,14 @@
-import { CODE_LENGTH, ERROR_TEXT, isValidCode, type ServerErrorCode } from "../shared/protocol";
+import {
+  CODE_LENGTH,
+  ERROR_TEXT,
+  isDeviceId,
+  isRendezvousName,
+  isValidCode,
+  type ServerErrorCode,
+} from "../shared/protocol";
 
 export { SessionRoom } from "./session-room";
+export { DeviceGroup } from "./device-group";
 export { JoinGuard } from "./join-guard";
 export { Metrics } from "./metrics";
 
@@ -54,6 +62,8 @@ async function openSocket(request: Request, env: Env, url: URL): Promise<Respons
       return openGuest(request, env, url);
     case "resume":
       return openResume(request, env, url);
+    case "rendezvous":
+      return openRendezvous(request, env, url);
     default:
       return rejectSocket("bad_request");
   }
@@ -97,6 +107,21 @@ async function openResume(request: Request, env: Env, url: URL): Promise<Respons
   return room.fetch(
     new Request(`https://session/resume?as=${as}&key=${encodeURIComponent(key)}`, request),
   );
+}
+
+/**
+ * Paired devices address their room by a name they derive from a shared secret, so
+ * there is nothing here to guess and nothing to rate limit: an attacker without the
+ * secret cannot name a room that anyone is in. The per-IP guard is deliberately not
+ * applied, because it would spend a device's budget on its own reconnects.
+ */
+async function openRendezvous(request: Request, env: Env, url: URL): Promise<Response> {
+  const room = url.searchParams.get("room") ?? "";
+  const device = url.searchParams.get("device") ?? "";
+  if (!isRendezvousName(room) || !isDeviceId(device)) return rejectSocket("bad_request");
+
+  const group = env.DEVICE_GROUP.get(env.DEVICE_GROUP.idFromName(room));
+  return group.fetch(new Request(`https://group/join?device=${device}`, request));
 }
 
 /**

@@ -154,6 +154,13 @@
           browsers should reach each other) passed between the two devices and not kept.
         </li>
         <li>
+          <strong>A meeting-point name, for devices you have paired.</strong> Paired devices
+          find each other without a code by computing a name from a secret only they hold.
+          The server sees that name and nothing else — no account, no device list, no idea
+          whose devices they are. The name is recomputed every few hours so it cannot serve
+          as a lasting label for you, and nothing about it is stored between sessions.
+        </li>
+        <li>
           <strong>Your IP address</strong>, used to count join attempts for one minute so that
           nobody can guess their way into someone else's code. It is not written down and the
           counter is discarded automatically.
@@ -190,6 +197,19 @@
           <strong>The session code and key</strong>, in your browser's per-tab storage, so a
           reload or a phone locking its screen does not lose the session. Closing the tab
           clears it.
+        </li>
+        <li>
+          <strong>This device's own key, and the devices you have paired with it.</strong> The
+          private half of the key is generated here and cannot be read out of the browser,
+          even by this page. The list holds a name and a public key per device, plus the
+          shared secret they use to find each other. None of it is ever sent to the server,
+          and "Forget every device" removes all of it. So does clearing your browser's data
+          for this site, which is why pairing again is sometimes necessary.
+        </li>
+        <li>
+          <strong>The folder you chose for arriving files</strong>, remembered so that a
+          device you already trust does not have to ask again. This page can reach that one
+          folder and nothing else on your disk, and your browser can revoke it at any time.
         </li>
         <li>
           <strong>Received files.</strong> If you chose a folder when you joined, they are
@@ -246,6 +266,11 @@
         </li>
         <li><strong>連線建立訊息</strong>(描述兩個瀏覽器如何找到彼此的技術資訊),轉交後不保留。</li>
         <li>
+          <strong>已配對裝置的會合點名稱</strong>。已配對的裝置不需要數字碼,它們用只有自己持有的
+          秘密算出一個房間名稱。伺服器只看得到那個名稱——沒有帳號、沒有裝置清單,也不知道那是誰的裝置。
+          該名稱每隔幾小時就會重新計算,無法當成長期識別你的標籤,而且不會跨連線保存。
+        </li>
+        <li>
           <strong>你的 IP 位址</strong>,用來在一分鐘內計算加入次數,防止有人靠猜測闖入別人的數字碼。
           它不會被寫下來,計數器會自動丟棄。
         </li>
@@ -274,6 +299,16 @@
         <li>
           <strong>連線代碼與金鑰</strong>,存在瀏覽器的分頁層級儲存空間,
           讓重新整理或手機鎖螢幕不會弄丟連線。關閉分頁即清除。
+        </li>
+        <li>
+          <strong>這台裝置自己的金鑰,以及你配對過的裝置</strong>。金鑰的私鑰部分在本機產生,
+          無法被讀出瀏覽器,連這個頁面也讀不到。清單裡每台裝置只有一個名稱與一把公鑰,
+          加上它們用來互相尋找的共用秘密。這些都不會送到伺服器,按下「忘記所有裝置」即可全部移除;
+          清除本站的瀏覽器資料也一樣,這也是有時需要重新配對的原因。
+        </li>
+        <li>
+          <strong>你為收到的檔案選定的資料夾</strong>,會被記住,讓已經信任的裝置不必每次再問一遍。
+          本頁面只碰得到那一個資料夾,磁碟上其他地方都碰不到,而且你的瀏覽器隨時可以收回這個授權。
         </li>
         <li>
           <strong>收到的檔案</strong>。如果你在加入時選了資料夾,檔案會邊收邊直接寫進那個資料夾,

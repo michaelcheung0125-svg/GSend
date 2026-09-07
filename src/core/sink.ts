@@ -7,6 +7,8 @@
  * origin-private filesystem instead, which is quota-bound and needs a second save step
  * but survives a reload. Memory is the last resort, for contexts with neither.
  */
+import { dbDelete, dbGet, dbPut } from "./store-db";
+
 export interface FileSink {
   /**
    * The name the file was written under in the person's own folder, when it went
@@ -118,6 +120,13 @@ interface DirectoryPicker {
   }) => Promise<FileSystemDirectoryHandle>;
 }
 
+/** Permission querying is not in the DOM lib yet, though every engine with the picker has it. */
+interface PermissionedHandle {
+  queryPermission?: (options: { mode: "read" | "readwrite" }) => Promise<PermissionState>;
+}
+
+const FOLDER_KEY = "saveDirectory";
+
 let saveDirectory: FileSystemDirectoryHandle | null = null;
 
 export function directPickerSupported(): boolean {
@@ -139,6 +148,10 @@ export async function chooseSaveDirectory(): Promise<string | null> {
     // top of the filesystem, which is most of the friction in a folder picker.
     const handle = await picker({ id: "gsend-incoming", mode: "readwrite", startIn: "downloads" });
     saveDirectory = handle;
+    // Handles survive structured clone, so the choice can outlive the tab. Paired
+    // devices receive without anyone pressing anything, and a destination that has to
+    // be re-picked every time would put the click straight back.
+    await dbPut(FOLDER_KEY, handle).catch(() => undefined);
     return handle.name;
   } catch {
     // Dismissed, or blocked by policy. The OPFS path still works.
@@ -150,8 +163,29 @@ export function saveDirectoryName(): string | null {
   return saveDirectory?.name ?? null;
 }
 
-export function forgetSaveDirectory(): void {
+/**
+ * Bring back the folder chosen on an earlier visit, but only if the browser still
+ * considers the grant live. Where it has lapsed to "prompt" the handle is left alone:
+ * re-asking needs a click, and the picker reopens on the same folder anyway.
+ */
+export async function restoreSaveDirectory(): Promise<string | null> {
+  if (saveDirectory) return saveDirectory.name;
+  try {
+    const handle = await dbGet<FileSystemDirectoryHandle>(FOLDER_KEY);
+    if (!handle) return null;
+    const query = (handle as PermissionedHandle).queryPermission;
+    if (!query) return null;
+    if ((await query.call(handle, { mode: "readwrite" })) !== "granted") return null;
+    saveDirectory = handle;
+    return handle.name;
+  } catch {
+    return null;
+  }
+}
+
+export async function forgetSaveDirectory(): Promise<void> {
   saveDirectory = null;
+  await dbDelete(FOLDER_KEY).catch(() => undefined);
 }
 
 /**

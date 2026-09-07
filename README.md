@@ -2,7 +2,8 @@
 
 Send files and text straight from one browser to another. Pick what to send, hand over
 a 4-digit code, and the other device receives it the moment it enters the code — over a
-direct WebRTC connection, so the files never touch a server.
+direct WebRTC connection, so the files never touch a server. Pair two devices once and
+the code stops being necessary between them: they find each other on their own.
 
 Live at **[gsend.cc](https://gsend.cc)**.
 
@@ -23,7 +24,8 @@ Browser A  ──WebSocket──►  Cloudflare Worker  ◄──WebSocket──
 4. The queue starts moving as soon as the data channel opens — no second confirmation.
    **A** sees the device arrive and can stop the session at any point.
 5. Both sides stay connected and can keep sending files and text until either closes
-   the page.
+   the page. They also remember each other, so the next transfer between them needs no
+   code at all.
 
 The server's only job is introductions. It stores a session's keys and expiry in a
 Durable Object and nothing else — no accounts, no database, no file storage, no logs
@@ -45,6 +47,20 @@ is the cost of the shorter path; a distributed attacker with enough addresses to
 10,000 codes in a minute is the case this does not defend against.
 
 Resuming after a network drop uses a 256-bit session key, not the code.
+
+**Paired devices are a different problem**, because no code is involved at all. Each
+browser generates a keypair whose private half is non-extractable, and a pairing done
+over a code records the other side's public key. From then on both devices derive the
+same signalling room name from a shared 256-bit secret, so they meet without the server
+holding any membership, account or device list — it only ever sees an opaque name, and
+one that is recomputed every six hours so it cannot become a lasting label. Knowing that
+name is still not enough to receive anything: the two devices prove themselves to each
+other over the encrypted data channel, checked against the key stored at pairing time,
+and an unproved peer is refused before a single byte moves.
+
+The trade is honest: the secret is long-lived and sits in the browser's storage, which
+is a different risk profile from a code that dies in 60 seconds. Anyone with your
+unlocked device can join your group — but at that point they have your device.
 
 ## Running it locally
 
@@ -113,6 +129,11 @@ origin, so there is nothing else to host. Durable Objects run on Cloudflare's fr
 | `src/core/transfer.ts` | Chunked file transfer, backpressure, acks, resume |
 | `src/core/client.ts` | Session state machine the UI subscribes to |
 | `src/core/sink.ts` | Where received bytes land: the person's own folder, OPFS, or memory |
+| `src/core/identity.ts` | This device's keypair and the id derived from it |
+| `src/core/devices.ts` | Paired devices, the shared secret, and the derived meeting point |
+| `src/core/group.ts` | The socket that keeps this device findable by the others |
+| `src/core/handshake.ts` | The mutual proof two devices exchange over the data channel |
+| `worker/device-group.ts` | The rendezvous room: presence and signalling, no membership |
 | `src/core/opfs-worker.ts` | Owns the filesystem handles off the main thread |
 | `src/ui/` | React screens |
 | `public/` | Manifest, icons, service worker, privacy page |
@@ -149,6 +170,26 @@ quota-bound, so the per-file ceiling is derived from what the origin actually re
 rather than hard-coded — several GB on a typical desktop — falling to 256 MB only where
 OPFS is unusable, such as Safari private browsing. Either way the receiving side is the
 one that refuses a file it has no room for, since only it can see its own storage.
+
+**Devices remember each other after one pairing.** A browser generates a keypair on
+first use and keeps it, with the devices it has paired with, in IndexedDB. Pairing rides
+on the ordinary code flow: once the channel is open the two sides exchange public keys,
+prove them by signing each other's nonce, and one hands over the group secret. After
+that they appear in each other's device list with live presence, and sending is one
+click with no code, no QR and no typing. The destination folder is remembered too, so a
+file sent to a paired device is written where it belongs without anyone touching the
+receiving machine.
+
+Presence works because the group's signalling room is addressed by a name derived from
+the shared secret, and the Worker addresses rooms by name alone. That means the whole
+feature needs no server-side state: no registry, no accounts, nothing to leak. The
+per-window derivation costs one reconnect every six hours, which the client schedules
+for itself.
+
+iOS is the weak spot. Safari evicts IndexedDB for a site that has not been used in seven
+days unless it is installed to the home screen, so a pairing there can lapse and need
+redoing; the app asks for persistent storage, which helps, and an installed copy is
+markedly safer.
 
 **Anonymous connection counts** are recorded so the TURN question can be settled with
 evidence: one record per session saying whether a direct connection worked and whether

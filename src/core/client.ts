@@ -11,9 +11,29 @@ import {
 import type { Message } from "../i18n/strings";
 import { PeerLink, STUN_ONLY, type PeerChannels, type PeerState } from "./peer";
 import { clearSession, loadSession, saveSession } from "./session-store";
-import { chooseSaveDirectory, forgetSaveDirectory, saveDirectoryName } from "./sink";
+import {
+  chooseSaveDirectory,
+  forgetSaveDirectory,
+  restoreSaveDirectory,
+  saveDirectoryName,
+} from "./sink";
+import { forgetDevice, forgetGroup, groupSecret, knownDevices, type KnownDevice } from "./devices";
+import { GroupLink } from "./group";
+import { Handshake } from "./handshake";
+import { loadIdentity, renameDevice, type Identity } from "./identity";
+import type { PeerControl } from "./protocol";
 import { Signaling } from "./signaling";
 import { TransferEngine, type TextMessage, type TransferView } from "./transfer";
+
+/** How this session found its peer: someone typed a code, or the devices already knew each other. */
+export type Mode = "code" | "group";
+
+/** A device this one has been paired with, and whether it is reachable right now. */
+export interface DeviceView {
+  id: string;
+  name: string;
+  online: boolean;
+}
 
 export type Phase =
   | "idle"
@@ -37,6 +57,17 @@ export interface Snapshot {
   /** True once this session brought the relay into play (billable path). */
   relayEngaged: boolean;
   channelsOpen: boolean;
+  mode: Mode;
+  /** This device's own name and id, once the browser has given us a durable store. */
+  identity: { id: string; name: string } | null;
+  /** Paired devices, with live presence from the rendezvous room. */
+  devices: DeviceView[];
+  /** Whether this device is currently findable by the others. */
+  groupOnline: boolean;
+  /** The paired device this session is talking to, when it came from the device list. */
+  peerDevice: string | null;
+  /** Whether the peer has proved which device it is. Required before anything moves in group mode. */
+  verified: boolean;
   /** The folder incoming files are being written into, when one was chosen. */
   savingTo: string | null;
   /** When the other device came through, so the sender can see it happen. */
@@ -89,6 +120,7 @@ interface InstanceAnnouncement {
 export class GSendClient {
   private readonly signaling: Signaling;
   private readonly transfer: TransferEngine;
+  private readonly group: GroupLink;
   private peer: PeerLink | null = null;
 
   /**
@@ -107,6 +139,23 @@ export class GSendClient {
   private connection: PeerState = "new";
   private channelsOpen = false;
   private peerJoinedAt: number | null = null;
+  private mode: Mode = "code";
+  private identity: Identity | null = null;
+  private paired: KnownDevice[] = [];
+  private presence = new Set<string>();
+  private peerDevice: string | null = null;
+  private handshake: Handshake | null = null;
+  private verified = false;
+  private woken = false;
+  /** Kept so a group session can attach the engine once the peer has proved itself. */
+  private openChannels: PeerChannels | null = null;
+  /**
+   * Signals that arrived before there was a connection to give them to. Building one
+   * waits on relay credentials, and a device session starts building only *because* a
+   * signal arrived — so the offer that opened it would otherwise be the one dropped,
+   * and only the offering side creates channels, so nothing would ever follow it.
+   */
+  private pendingSignals: unknown[] = [];
   private texts: TextMessage[] = [];
   private pendingFiles: File[] = [];
   private pendingText: string | null = null;
@@ -156,8 +205,128 @@ export class GSendClient {
       onTransfersChanged: () => this.persist(),
     });
 
+    this.group = new GroupLink({
+      onPresence: (peers) => {
+        this.presence = new Set(peers);
+        this.emitNow();
+      },
+      onSignal: (peer, data) => this.onGroupSignal(peer, data),
+      onIce: (servers) => this.deliverIceServers(servers),
+      onOffline: () => this.emitNow(),
+    });
+
     this.installLifecycleHandlers();
     this.snapshot = this.build();
+  }
+
+  // --- paired devices ------------------------------------------------------
+
+  /**
+   * Load this device's identity and go online for the devices it already knows. Called
+   * once at startup, before anything else: the device list is the first thing on screen
+   * and joining the rendezvous room is what makes it true.
+   */
+  async wake(): Promise<void> {
+    // Guarded here rather than by the caller: going online is about this client, not
+    // about which entry path the page took, and a second call would only churn the socket.
+    if (this.woken) return;
+    this.woken = true;
+
+    // A folder granted on an earlier visit means an incoming file needs no clicks at
+    // all, which is the point of remembering a device in the first place.
+    await restoreSaveDirectory();
+    this.emitNow();
+
+    this.identity = await loadIdentity();
+    if (!this.identity) return;
+
+    this.paired = await knownDevices();
+    this.emitNow();
+    await this.goOnline();
+  }
+
+  private async goOnline(): Promise<void> {
+    if (!this.identity) return;
+    const secret = await groupSecret();
+    if (!secret) return;
+    this.group.start(secret, this.identity.id);
+  }
+
+  private async refreshDevices(): Promise<void> {
+    this.paired = await knownDevices();
+    this.emitNow();
+    // A pairing may have just created or changed the group, which is what the
+    // rendezvous room is derived from, so the socket has to be pointed at the new one.
+    this.group.stop();
+    await this.goOnline();
+  }
+
+  async rename(name: string): Promise<void> {
+    this.identity = await renameDevice(name);
+    this.emitNow();
+  }
+
+  async unpair(id: string): Promise<void> {
+    await forgetDevice(id);
+    this.paired = await knownDevices();
+    this.emitNow();
+  }
+
+  /** Leave the group entirely: stop being findable, and forget every paired device. */
+  async unpairAll(): Promise<void> {
+    this.group.stop();
+    await forgetGroup();
+    // Forgetting the devices means forgetting where their files were going, too.
+    await forgetSaveDirectory();
+    this.paired = [];
+    this.presence.clear();
+    this.emitNow();
+  }
+
+  /**
+   * Open a session with a device from the list. No code is involved, so the peer has to
+   * prove which device it is before anything moves; `verified` is what gates that.
+   */
+  connectToDevice(id: string, files: File[] = [], text: string | null = null): void {
+    if (!this.identity) return;
+    const device = this.paired.find((known) => known.id === id);
+    if (!device || !this.presence.has(id)) return;
+
+    this.resetSession();
+    // Set after resetSession, which would otherwise clear them.
+    this.pendingFiles = files;
+    this.pendingText = text;
+    this.mode = "group";
+    this.peerDevice = id;
+    // No host and guest here, so the tie is broken by id. Both sides read it the same
+    // way, which is all perfect negotiation needs to settle offer collisions.
+    this.role = this.identity.id < id ? "host" : "guest";
+    this.phase = "pairing";
+    this.peerPresent = true;
+    this.emitNow();
+    void this.startPeer();
+  }
+
+  /**
+   * A signal arrived from a paired device. If this side is idle the other one is
+   * calling, so answer it; otherwise ignore anything not from the peer already engaged.
+   */
+  private onGroupSignal(peer: string, data: unknown): void {
+    if (this.peerDevice && this.peerDevice !== peer) return;
+
+    if (!this.peerDevice) {
+      if (!this.identity || !this.paired.some((known) => known.id === peer)) return;
+      this.resetSession();
+      this.mode = "group";
+      this.peerDevice = peer;
+      this.role = this.identity.id < peer ? "host" : "guest";
+      this.phase = "pairing";
+      this.peerPresent = true;
+      this.emitNow();
+      void this.startPeer();
+    }
+
+    this.onSignal(data);
   }
 
   subscribe = (listener: () => void): (() => void) => {
@@ -242,7 +411,7 @@ export class GSendClient {
 
   /** The queue goes out as soon as there is something to carry it. */
   private flushPendingShare(): void {
-    if (!this.channelsOpen) return;
+    if (!this.channelsOpen || !this.trusted()) return;
 
     if (this.pendingFiles.length > 0) {
       this.transfer.sendFiles(this.pendingFiles);
@@ -466,12 +635,26 @@ ${trimmed}` : trimmed;
 
   // --- peer identity -------------------------------------------------------
 
+  /**
+   * Signals reach the peer over whichever transport this session was built on: the
+   * room named by a 4-digit code, or the rendezvous room the paired devices derive.
+   * Everything above this line is identical either way.
+   */
+  private sendSignal(data: unknown): void {
+    if (this.mode === "group") {
+      if (this.peerDevice) this.group.send(this.peerDevice, data);
+      return;
+    }
+    this.signaling.send({ t: "signal", data });
+  }
+
   private requestIceServers(): Promise<IceServer[]> {
     if (this.iceServersPromise) return this.iceServersPromise;
 
     this.iceServersPromise = new Promise<IceServer[]>((resolve) => {
       this.resolveIceServers = resolve;
-      this.signaling.send({ t: "ice" });
+      if (this.mode === "group") this.group.requestIce();
+      else this.signaling.send({ t: "ice" });
       setTimeout(() => this.deliverIceServers(STUN_ONLY), ICE_REQUEST_TIMEOUT_MS);
     });
     return this.iceServersPromise;
@@ -491,7 +674,7 @@ ${trimmed}` : trimmed;
   }
 
   private announceInstance(): void {
-    this.signaling.send({ t: "signal", data: { instance: this.instanceId } });
+    this.sendSignal({ instance: this.instanceId });
   }
 
   private onSignal(data: unknown): void {
@@ -500,7 +683,11 @@ ${trimmed}` : trimmed;
       this.onRemoteInstance(announcement.instance);
       return;
     }
-    void this.peer?.handleSignal(data);
+    if (!this.peer) {
+      this.pendingSignals.push(data);
+      return;
+    }
+    void this.peer.handleSignal(data);
   }
 
   private onRemoteInstance(id: string): void {
@@ -584,7 +771,7 @@ ${trimmed}` : trimmed;
     if (!this.relayNeeded) iceServers = withoutRelay(iceServers);
 
     this.peer = new PeerLink(this.role, iceServers, {
-      onSignal: (data) => this.signaling.send({ t: "signal", data }),
+      onSignal: (data) => this.sendSignal(data),
       onState: (state) => {
         this.connection = state;
         if (state === "failed") {
@@ -597,14 +784,23 @@ ${trimmed}` : trimmed;
       onChannels: (channels) => this.onChannels(channels),
       onChannelsLost: () => {
         this.channelsOpen = false;
+        this.openChannels = null;
         this.transfer.detach();
         this.emitNow();
       },
-      onControlMessage: (raw) => this.transfer.handleControl(raw),
-      onDataFrame: (frame) => this.transfer.handleFrame(frame),
+      onControlMessage: (raw) => this.onPeerControl(raw),
+      onDataFrame: (frame) => {
+        if (!this.trusted()) return;
+        this.transfer.handleFrame(frame);
+      },
     }, forceRelay);
 
     this.peer.start();
+
+    const queued = this.pendingSignals;
+    this.pendingSignals = [];
+    for (const data of queued) void this.peer.handleSignal(data);
+
     this.armRelayDeadline();
   }
 
@@ -661,7 +857,11 @@ ${trimmed}` : trimmed;
     // Open channels are proof the peer is here, whatever the signalling said earlier.
     this.clearPeerAbsence();
     this.peerPresent = true;
-    this.transfer.attach(channels);
+    this.openChannels = channels;
+    // A group session holds the engine back until the peer has proved itself; a code
+    // session has already been vouched for by the person who read out the digits.
+    if (this.trusted()) this.transfer.attach(channels);
+    this.startHandshake();
 
     if (this.failureTimer) {
       clearTimeout(this.failureTimer);
@@ -674,13 +874,62 @@ ${trimmed}` : trimmed;
       }, PATH_SETTLE_MS);
     }
 
-    // Open channels are the whole gate now: whoever staged something sends it here,
-    // and the other side is already receiving into the folder it picked.
-    this.phase = "active";
-    this.peerJoinedAt ??= Date.now();
-    this.persist();
-    this.flushPendingShare();
+    // Open channels are the whole gate for a code session: whoever staged something
+    // sends it here, and the other side is already receiving into the folder it picked.
+    if (this.trusted()) {
+      this.phase = "active";
+      this.peerJoinedAt ??= Date.now();
+      this.persist();
+      this.flushPendingShare();
+    }
     this.emitNow();
+  }
+
+  /** Whether this session may carry anything yet. */
+  private trusted(): boolean {
+    return this.mode === "code" || this.verified;
+  }
+
+  /**
+   * Both sides announce themselves the moment the control channel is up. In a code
+   * session this only records a pairing for next time and never blocks the transfer,
+   * so a peer running an older build still works; in a group session it is the gate.
+   */
+  private startHandshake(): void {
+    const identity = this.identity;
+    if (!identity || this.handshake) return;
+
+    this.handshake = new Handshake(identity, this.mode, {
+      send: (msg) => this.peer?.sendControl(JSON.stringify(msg)),
+      onVerified: ({ stranded }) => {
+        this.verified = true;
+        if (stranded > 0) this.notice = { key: "notice.regrouped", params: { count: stranded } };
+        void this.refreshDevices();
+
+        if (this.openChannels) this.transfer.attach(this.openChannels);
+        this.phase = "active";
+        this.peerJoinedAt ??= Date.now();
+        this.flushPendingShare();
+        this.emitNow();
+      },
+      onRejected: () => {
+        // Only reachable in group mode, where an unproved peer has no business here.
+        if (this.mode === "group") this.end({ key: "error.unknownDevice" });
+      },
+    });
+    void this.handshake.begin();
+  }
+
+  private onPeerControl(raw: string): void {
+    let msg: PeerControl;
+    try {
+      msg = JSON.parse(raw) as PeerControl;
+    } catch {
+      return;
+    }
+    if (this.handshake?.handle(msg)) return;
+    if (!this.trusted()) return;
+    this.transfer.handleControl(raw);
   }
 
   // --- connection metrics --------------------------------------------------
@@ -766,8 +1015,6 @@ ${trimmed}` : trimmed;
 
   reset(): void {
     this.resetSession();
-    // The grant lasts until someone deliberately goes back to the beginning.
-    forgetSaveDirectory();
     this.phase = "idle";
     this.emitNow();
   }
@@ -788,7 +1035,13 @@ ${trimmed}` : trimmed;
     this.peerAbsentSince = null;
     this.connection = "new";
     this.channelsOpen = false;
+    this.openChannels = null;
+    this.pendingSignals = [];
     this.peerJoinedAt = null;
+    this.mode = "code";
+    this.peerDevice = null;
+    this.handshake = null;
+    this.verified = false;
     this.texts = [];
     this.pendingFiles = [];
     this.pendingText = null;
@@ -869,6 +1122,16 @@ ${trimmed}` : trimmed;
       connection: this.connection,
       relayEngaged: this.relayNeeded,
       channelsOpen: this.channelsOpen,
+      mode: this.mode,
+      identity: this.identity ? { id: this.identity.id, name: this.identity.name } : null,
+      devices: this.paired.map((device) => ({
+        id: device.id,
+        name: device.name,
+        online: this.presence.has(device.id),
+      })),
+      groupOnline: this.group.online,
+      peerDevice: this.peerDevice,
+      verified: this.verified,
       savingTo: saveDirectoryName(),
       peerJoinedAt: this.peerJoinedAt,
       outgoing: this.transfer.snapshotOutgoing(),

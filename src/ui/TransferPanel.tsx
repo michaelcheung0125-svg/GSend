@@ -68,7 +68,7 @@ export default function TransferPanel({ client, state }: Props) {
           What replaced the approval screen: the sender is told the instant a device is
           through, with the kill switch in the same breath rather than a step earlier.
         */}
-        {state.role === "host" && state.channelsOpen && !joinDismissed && (
+        {state.mode === "code" && state.role === "host" && state.channelsOpen && !joinDismissed && (
           <p className="alert" style={{ marginBottom: 14 }}>
             {t("transfer.peerJoined")}
             <button
@@ -187,15 +187,17 @@ export default function TransferPanel({ client, state }: Props) {
  * except for the one word that has to say whether the ceiling is a number or the disk.
  */
 function statusBlock(state: Snapshot, diskWord: string): string {
-  const peer = state.relayEngaged ? "relay · turn" : "direct";
+  const route = state.relayEngaged ? "relay · turn" : "direct";
   const where = state.savingTo ?? "browser";
   const ceiling = state.savingTo ? diskWord : `${formatBytes(maxFileBytes())} / file`;
-  return [
-    `peer    ${peer}`,
-    `saving  ${where}`,
-    `limit   ${ceiling}`,
-    `code    ${state.code ?? "----"} · burned`,
-  ].join("\n");
+  // A device session was never named by a code, so the last line reports which paired
+  // device this is rather than a row of dashes.
+  const named = state.devices.find((device) => device.id === state.peerDevice);
+  const origin =
+    state.mode === "group"
+      ? `paired  ${named?.name ?? state.peerDevice ?? "device"}`
+      : `code    ${state.code ?? "----"} · burned`;
+  return [`peer    ${route}`, `saving  ${where}`, `limit   ${ceiling}`, origin].join("\n");
 }
 
 function useMediaQuery(query: string): boolean {

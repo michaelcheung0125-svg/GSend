@@ -41,7 +41,26 @@ export interface FileMeta {
   mime: string;
 }
 
+/** Domain separator for the mutual proof two devices exchange once a channel is open. */
+export const AUTH_LABEL = "gsend-auth-v1:";
+
 export type PeerControl =
+  /**
+   * Who this device claims to be. Sent by both sides the moment the control channel
+   * opens. `devices` decides which side's group survives when two already-paired
+   * devices meet: the larger group keeps its secret, since it has more to lose.
+   */
+  | { t: "auth"; id: string; name: string; publicKey: string; nonce: string; devices: number }
+  /** Signature over the peer's nonce, proving the private key behind the claim. */
+  | { t: "auth-proof"; sig: string }
+  /**
+   * Sent by whichever side refuses the other. Without it the rejected peer sees only a
+   * channel that closed, which is indistinguishable from a network fault and leaves it
+   * retrying something that will never be allowed.
+   */
+  | { t: "auth-fail" }
+  /** The group secret, handed over once both sides have proved themselves. */
+  | { t: "group-invite"; secret: string }
   | { t: "offer"; batchId: string; files: FileMeta[] }
   | { t: "accept"; batchId: string; offsets: Record<string, number> }
   | { t: "decline"; batchId: string; reason: string }

@@ -25,12 +25,14 @@ export default function App() {
   const [prefill, setPrefill] = useState("");
 
   useEffect(() => {
+    // Settle the storage probe here rather than on the landing screen, which never
+    // renders when someone arrives by QR code or link, and go online for the paired
+    // devices. Both guard themselves, so neither belongs behind the auto-join latch.
+    void prepareStorage();
+    void client.wake();
+
     if (autoJoinHandled) return;
     autoJoinHandled = true;
-
-    // Settle the storage probe here rather than on the landing screen, which never
-    // renders when someone arrives by QR code or link.
-    void prepareStorage();
 
     // Arriving from the system share sheet outranks everything: the person picked this
     // app in order to send something specific.

@@ -19,7 +19,16 @@ export default function PairingPanel({ client, state }: Props) {
       ? t("pairing.almostThere")
       : t("pairing.connecting");
 
-  const message = waitingForPeer ? t("pairing.waitingBody") : t("pairing.connectingBody");
+  // A device session has a name to put on the wait, and a verification step the person
+  // should be told about rather than left guessing at.
+  const peer = state.devices.find((device) => device.id === state.peerDevice);
+  const message = waitingForPeer
+    ? t("pairing.waitingBody")
+    : peer
+      ? state.channelsOpen
+        ? t("devices.verifying", { name: peer.name })
+        : t("devices.connecting", { name: peer.name })
+      : t("pairing.connectingBody");
 
   const statusLines = `stun    ok\nturn    ${state.relayEngaged ? "engaged" : "standby"}`;
 
