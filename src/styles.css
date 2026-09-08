@@ -1,7 +1,8 @@
 /*
  * GSend — "Classical" redesign, blue / red / white palette.
- * White ground, navy ink, blue accent used as stroke, red reserved for errors,
- * cancels and the urgent countdown, hairline dividers,
+ * Tinted blue-grey ground with white panels for each region, navy ink, blue
+ * accent used as stroke, red reserved for errors, cancels and the urgent
+ * countdown. Compact: everything on one screen without scrolling,
  * serif display type, monospace for everything that is data. Progress is drawn
  * CLI-style with █ ░ block characters: one row per transfer on desktop
  * (name · bar · % · rate · eta · bytes), stacked into three lines on phones.
@@ -9,7 +10,7 @@
 @import url("https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&family=Lora:wght@400;600&family=Noto+Serif+TC:wght@400;600&display=swap");
 
 :root {
-  --color-bg: #ffffff;
+  --color-bg: #edf1f8;
   --color-surface: #ffffff;
   --color-text: #0b1220;
   --color-accent: #0a4fe8;
@@ -99,29 +100,49 @@ body {
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
-  max-width: 1040px;
-  margin: 0 auto;
-  padding: 0 22px;
 }
 
+/* The header is a full-bleed white bar; only the body below is held to the column. */
 .app__header {
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 18px 0;
+  padding: 14px 22px;
+  background: var(--color-surface);
   border-bottom: 1px solid var(--color-divider);
 }
 
-.app__main { flex: 1; display: flex; flex-direction: column; padding: 0 0 32px; }
+.app__main, .app__footer, .app__header {
+  width: 100%;
+}
+.app__main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 0 22px 24px;
+}
 
 .app__footer {
   display: flex;
   align-items: center;
   gap: 20px;
-  padding: 16px 0 26px;
-  border-top: 1px solid var(--color-divider);
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 12px 22px 20px;
   font-size: 12px;
   color: var(--ink-50);
+}
+
+/* Every region is a white panel on the tinted ground. */
+.region {
+  background: var(--color-surface);
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  padding: 28px 28px 26px;
+  min-width: 0;
 }
 
 .app__footer-link {
@@ -217,50 +238,60 @@ body {
 .btn--ghost { color: var(--color-accent-text); padding-inline: 8px; }
 .btn--ghost:hover:not(:disabled) { background: color-mix(in srgb, var(--color-accent) 10%, transparent); }
 
-.btn--lg { font-size: 16px; padding: 13px 30px; }
+.btn--lg { font-size: 15px; padding: 11px 26px; }
 .btn--tiny { font-size: 12px; padding: 5px 12px; }
 
 /* ── screens share this frame ──────────────────────────────────────────── */
 
 .screen {
   display: grid;
-  grid-template-columns: 1fr 1px 380px;
-  gap: 44px;
-  padding: 56px 0 48px;
+  grid-template-columns: 1fr 380px;
+  gap: 24px;
+  padding: 24px 0;
   align-items: start;
 }
-.screen--host { grid-template-columns: 1fr 1px 300px; }
-.screen__rule { background: var(--color-divider); align-self: stretch; }
+.screen--host { grid-template-columns: 1fr 300px; }
+/* The hairline that used to split the column is now the gap between two panels. */
+.screen__rule { display: none; }
+.screen > *, .panel > * { min-width: 0; }
+.screen > :not(.screen__rule), .panel__main, .panel__aside {
+  background: var(--color-surface);
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  padding: 28px 28px 26px;
+}
+.screen > :nth-child(3), .panel__aside { padding: 24px 24px 22px; }
 
 .kicker {
   font-size: 11px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--color-accent-text);
-  margin-bottom: 16px;
+  margin-bottom: 12px;
   font-family: var(--font-body);
 }
 .kicker--muted { color: var(--ink-45); }
 
 .display {
-  margin: 0 0 18px;
+  margin: 0 0 12px;
   font-family: var(--font-heading);
   font-weight: 400;
-  font-size: 52px;
-  line-height: 1.06;
+  font-size: 40px;
+  line-height: 1.1;
   letter-spacing: -0.015em;
 }
-.display--md { font-size: 32px; margin-bottom: 8px; }
+.display--md { font-size: 26px; margin-bottom: 6px; }
 
-.lede { margin: 0 0 26px; font-size: 16px; line-height: 1.75; max-width: 46ch; color: var(--ink-70); }
+.lede { margin: 0 0 20px; font-size: 14px; line-height: 1.65; max-width: 48ch; color: var(--ink-70); }
 .sub { margin: 0; font-size: 13px; line-height: 1.7; color: var(--ink-55); }
-.side-title { margin: 0 0 6px; font-family: var(--font-heading); font-weight: 600; font-size: 20px; }
+.side-title { margin: 0 0 4px; font-family: var(--font-heading); font-weight: 600; font-size: 18px; }
 .enter-hint { font-family: var(--font-mono); font-size: 11px; color: var(--ink-45); }
 
 .footnote { display: flex; gap: 12px; font-size: 12px; line-height: 1.7; color: var(--ink-55); }
 .footnote::before { content: "·"; color: var(--color-accent); }
 
-.hr { height: 1px; border: 0; margin: 18px 0; background: var(--color-divider); }
+.hr { height: 1px; border: 0; margin: 14px 0; background: var(--color-divider); }
 
 /* ── paired devices ────────────────────────────────────────────────────── */
 
@@ -305,18 +336,21 @@ body {
 
 /* ── code entry (landing) ──────────────────────────────────────────────── */
 
-.code-form { display: flex; flex-direction: column; gap: 14px; width: 100%; }
-.code-entry { position: relative; display: flex; gap: 10px; }
+/* Cells and the join button share one row, so the whole block fits a phone screen. */
+.code-form { display: flex; align-items: stretch; gap: 8px; width: 100%; }
+.code-form .btn { padding-inline: 18px; }
+.code-entry { position: relative; display: flex; gap: 8px; flex: 1; }
 
 .code-entry__cell {
   flex: 1;
-  max-width: 64px;
-  height: 82px;
+  max-width: 52px;
+  height: 56px;
   display: grid;
   place-items: center;
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  font-size: 34px;
+  font-size: 24px;
+  background: var(--color-surface);
   border: 1px solid var(--color-divider);
   border-radius: var(--radius-md);
   color: var(--color-text);
@@ -331,7 +365,7 @@ body {
   width: 100%;
   height: 100%;
   opacity: 0;
-  font-size: 34px;
+  font-size: 24px;
   border: 0;
   background: transparent;
   cursor: pointer;
@@ -339,21 +373,21 @@ body {
 
 /* ── host screen ───────────────────────────────────────────────────────── */
 
-.code-display { display: flex; gap: 14px; margin-bottom: 20px; }
+.code-display { display: flex; gap: 10px; margin-bottom: 16px; }
 
 .code-display__digit {
   flex: 1;
-  max-width: 112px;
-  aspect-ratio: 4 / 5;
+  max-width: 80px;
+  aspect-ratio: 5 / 6;
   display: grid;
   place-items: center;
   font-family: var(--font-heading);
   font-weight: 400;
-  font-size: clamp(44px, 9vw, 76px);
+  font-size: clamp(36px, 7vw, 56px);
   font-variant-numeric: lining-nums tabular-nums;
   border: 1px solid var(--color-divider);
   border-radius: var(--radius-md);
-  background: var(--ink-02);
+  background: var(--color-surface);
 }
 
 .countdown-row { display: flex; align-items: center; gap: 14px; margin-bottom: 8px; }
@@ -363,7 +397,7 @@ body {
 .countdown--urgent { color: var(--color-red); }
 
 .qr-plate { padding: 8px; background: var(--color-surface); outline: 1px solid var(--color-divider); align-self: flex-start; }
-.qr { display: block; background: #fff; }
+.qr { display: block; background: #fff; max-width: 236px; height: auto; }
 
 .link-copy { font-family: var(--font-mono); font-size: 12px; justify-content: space-between; width: 100%; word-break: break-all; }
 .link-copy__hint { color: var(--color-accent-text); font-family: var(--font-heading); font-weight: 600; font-size: 13px; flex: none; }
@@ -373,17 +407,18 @@ body {
 .panel-card {
   border: 1px solid var(--color-divider);
   border-radius: var(--radius-md);
-  padding: 32px;
+  padding: 24px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  background: var(--ink-02);
+  gap: 12px;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
   max-width: 560px;
-  margin: 48px auto 0;
+  margin: 24px auto 0;
   width: 100%;
 }
 .panel-card .kicker { margin-bottom: 0; }
-.card__title { margin: 0; font-family: var(--font-heading); font-weight: 400; font-size: 28px; line-height: 1.15; }
+.card__title { margin: 0; font-family: var(--font-heading); font-weight: 400; font-size: 24px; line-height: 1.15; }
 .panel-card p { margin: 0; font-size: 14px; line-height: 1.8; color: var(--ink-70); }
 
 .term {
@@ -417,15 +452,15 @@ body {
 
 .panel {
   display: grid;
-  grid-template-columns: 1fr 1px 300px;
-  gap: 36px;
-  padding: 34px 0 8px;
+  grid-template-columns: 1fr 300px;
+  gap: 24px;
+  padding: 24px 0 8px;
   align-items: start;
 }
 .panel__main { min-width: 0; }
 
-.session-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 16px; flex-wrap: wrap; }
-.session-head h3 { margin: 0; font-family: var(--font-heading); font-weight: 400; font-size: 26px; }
+.session-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 12px; flex-wrap: wrap; }
+.session-head h3 { margin: 0; font-family: var(--font-heading); font-weight: 400; font-size: 22px; }
 .session-head__meta { font-family: var(--font-mono); font-size: 11px; font-variant-numeric: tabular-nums; color: var(--ink-50); }
 
 .transfers, .messages { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--color-divider); }
@@ -442,7 +477,7 @@ body {
   grid-template-areas: "arrow name bar pct rate eta bytes action";
   align-items: center;
   gap: 10px;
-  padding: 13px 0;
+  padding: 11px 0;
   border-bottom: 1px solid var(--color-divider);
   font-family: var(--font-mono);
   font-size: 11px;
@@ -507,16 +542,16 @@ body {
 
 /* aside */
 
-.panel__aside { display: flex; flex-direction: column; gap: 16px; position: sticky; top: 20px; }
+.panel__aside { display: flex; flex-direction: column; gap: 14px; position: sticky; top: 20px; }
 
 .dropzone {
   border: 1px dashed var(--ink-28);
   border-radius: var(--radius-md);
-  padding: 32px 20px;
+  padding: 22px 18px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 14px;
+  gap: 10px;
   text-align: center;
   transition: border-color 0.15s ease, background 0.15s ease;
 }
@@ -545,8 +580,18 @@ body {
 
 /* ── ended screen ──────────────────────────────────────────────────────── */
 
-.ended { padding: 64px 0; max-width: 560px; }
-.ended .display--md { font-size: 36px; margin-bottom: 12px; }
+/* The end-of-session and "reserving a code" screens are single regions, so they
+   carry the same white panel as every other region rather than sitting bare. */
+.ended {
+  max-width: 560px;
+  margin: 24px 0;
+  padding: 28px 28px 26px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+}
+.ended .display--md { font-size: 28px; margin-bottom: 10px; }
 .ended__lede { margin: 0 0 24px; font-size: 15px; color: var(--ink-70); }
 .ended .term { margin-bottom: 24px; }
 
@@ -555,28 +600,35 @@ body {
 @media (max-width: 860px) {
   .screen, .screen--host, .panel {
     grid-template-columns: 1fr;
-    gap: 0;
-    padding-top: 26px;
+    gap: 12px;
+    padding-top: 14px;
   }
-  .screen__rule { height: 1px; align-self: auto; margin: 30px 0; }
-  .display { font-size: 40px; }
-  .lede { font-size: 15px; }
+  .screen > :not(.screen__rule), .panel__main, .panel__aside { padding: 16px; }
+  .app__main { padding: 0 18px 16px; }
+  /* Four controls have to share 375px without wrapping onto a second line. */
+  .app__header { padding: 10px 18px; gap: 8px; }
+  .display { font-size: 24px; line-height: 1.2; margin-bottom: 8px; }
+  .display--md { font-size: 22px; }
+  .lede { font-size: 13px; line-height: 1.6; margin-bottom: 14px; }
+  .kicker { margin-bottom: 8px; }
   .header-host { display: none; }
 
   /* Touch targets: 48px floor on every full-width or primary control. */
   .btn--lg, .btn--block, .composer__input, .composer .btn { min-height: 48px; }
   .btn--block { width: 100%; }
-  .btn--tiny { min-height: 36px; }
+  .btn--tiny { min-height: 32px; }
+  .code-form .btn { min-height: 44px; }
 
-  .code-entry__cell { max-width: none; height: 72px; font-size: 30px; }
-  .code-display { gap: 10px; }
-  .code-display__digit { max-width: none; }
+  .code-entry__cell { max-width: none; height: 44px; font-size: 20px; }
+  .code-display { gap: 8px; }
+  .code-display__digit { max-width: none; aspect-ratio: auto; height: 56px; font-size: 32px; }
+  .qr { max-width: 160px; }
 
-  .panel { display: flex; flex-direction: column; align-items: stretch; gap: 18px; }
-  /* The aside comes first on phones; the rule has to follow it rather than
-     stay in DOM order, or it strands itself under the last transfer. */
-  .panel__aside { position: static; order: -2; }
-  .panel > .screen__rule { order: -1; margin: 12px 0; }
+  .panel { display: flex; flex-direction: column; align-items: stretch; gap: 12px; }
+  .panel__aside { position: static; order: -1; gap: 8px; }
+  .dropzone { padding: 12px; gap: 8px; }
+  .dropzone__hint { display: none; }
+  .session-head h3 { font-size: 15px; }
 
   /* The single row folds into three lines: head / bar / stats. */
   .transfer {
@@ -587,10 +639,11 @@ body {
       "arrow name action"
       "bar   bar  pct"
       "stats stats stats";
-    gap: 7px 8px;
-    padding: 14px 0;
+    gap: 4px 8px;
+    padding: 10px 0;
     white-space: normal;
   }
+  .transfer__name { font-size: 13px; }
   .transfer__bar { display: flex; align-items: center; gap: 10px; font-size: 13px; white-space: nowrap; }
   .transfer__bar .bar { flex: 1; overflow: hidden; }
   .transfer__pct { margin-left: auto; }
@@ -599,8 +652,8 @@ body {
   .transfer__stat:not(:empty) + .transfer__stat:not(:empty)::before { content: " · "; white-space: pre; }
   .transfer__action { min-width: 0; }
 
-  .panel-card { padding: 24px 20px; margin-top: 26px; }
-  .ended { padding: 40px 0; }
+  .panel-card { padding: 18px 16px; margin-top: 14px; }
+  .ended { margin: 14px 0; padding: 16px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -196,7 +196,7 @@ export default function Landing({ client, state, prefill }: Props) {
         <hr className="hr" />
 
         <h4 className="side-title">{t("landing.orJoin")}</h4>
-        <p className="sub" style={{ marginBottom: 20 }}>
+        <p className="sub" style={{ marginBottom: 14 }}>
           {t("landing.joinSub")}
         </p>
 
@@ -236,7 +236,7 @@ export default function Landing({ client, state, prefill }: Props) {
           </div>
           <button
             type="submit"
-            className="btn btn--secondary btn--block"
+            className="btn btn--secondary"
             disabled={code.length !== CODE_LENGTH}
           >
             {t("landing.join")}
