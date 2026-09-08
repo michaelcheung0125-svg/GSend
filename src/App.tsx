@@ -10,6 +10,9 @@ import TransferPanel from "./ui/TransferPanel";
 
 const client = new GSendClient();
 
+/** The host this copy is served from: the same Worker answers on more than one. */
+const HOST = location.host;
+
 /** Module scope so React StrictMode's double mount cannot join twice. */
 let autoJoinHandled = false;
 
@@ -77,7 +80,7 @@ export default function App() {
           <span className="brand__mark" aria-hidden="true" />
           GSend
         </button>
-        {state.phase === "idle" && <span className="header-host">gsend.cc</span>}
+        {state.phase === "idle" && <span className="header-host">{HOST}</span>}
         {inSession && state.channelsOpen && <StatusChip state={state} i18n={i18n} />}
         <button
           type="button"

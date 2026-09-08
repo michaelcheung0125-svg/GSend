@@ -5,7 +5,10 @@
   "compatibility_date": "2026-08-01",
   // Cloudflare creates the DNS record and the certificate for this on deploy.
   "routes": [{ "pattern": "gsend.cc", "custom_domain": true }],
-  // Declaring a route would otherwise disable it; kept as a fallback URL for testing.
+  // Declaring a route would otherwise disable it. Kept on deliberately: corporate web
+  // filters block gsend.cc as a newly registered domain, and workers.dev is old enough
+  // to pass, so the same Worker stays reachable from a network that refuses the domain.
+  // Both addresses work unchanged because the app is relative to location.host.
   "workers_dev": true,
   "assets": {
     "binding": "ASSETS",
