@@ -38,8 +38,6 @@ export const en = {
   "landing.orJoin": "or join one",
   "landing.join": "Join and receive",
   "landing.joinSub": "Enter the 4 digits shown on the other device.",
-  "landing.joinFolderHint":
-    "Joining asks where to save. Everything sent during this session lands in that folder, written straight to disk with no size limit.",
   "landing.qrHint": "Scanning the square on the other screen also joins — no typing needed.",
   "landing.codeLabel": "4-digit code",
 
@@ -106,8 +104,6 @@ export const en = {
   "row.pending": "Waiting for the other device",
   "row.progress": "{percent}% · {transferred}",
 
-  "notice.noFolder":
-    "No folder picked, so files land in this browser's storage — up to {size} each, and you save them by hand.",
   "notice.regrouped":
     "This device joined the other one's group. {count} device(s) it knew before are in the old group and need pairing again.",
   "notice.folderBlocked":
@@ -200,7 +196,6 @@ export const zh: Record<MessageKey, string> = {
   "landing.orJoin": "或加入一個",
   "landing.join": "加入並接收",
   "landing.joinSub": "輸入另一台裝置上顯示的 4 位數字。",
-  "landing.joinFolderHint": "加入時會問你要存到哪個資料夾。這次連線收到的所有檔案都會直接寫進那個資料夾,不經過中轉,也沒有大小上限。",
   "landing.qrHint": "掃描對方畫面上的方塊也可以直接加入,不用打數字。",
   "landing.codeLabel": "4 位數字碼",
 
@@ -263,7 +258,6 @@ export const zh: Record<MessageKey, string> = {
   "row.pending": "正在等待另一台裝置",
   "row.progress": "{percent}% · {transferred}",
 
-  "notice.noFolder": "沒有選資料夾,檔案會先收進這個瀏覽器的儲存空間——每個檔案上限 {size},而且要自己按儲存。",
   "notice.regrouped": "這台裝置改加入了對方的裝置群組。原本認識的 {count} 台留在舊群組,需要重新配對一次。",
   "notice.folderBlocked": "沒有選到資料夾,檔案會先留在瀏覽器裡。如果剛才顯示「資料夾中包含系統檔案」,那是瀏覽器擋的、不是 GSend:磁碟根目錄、你的使用者資料夾本身、Windows、Program Files 與 AppData 都不允許。改選它們裡面的一般資料夾就可以,例如「下載」,或自己新建一個。",
 

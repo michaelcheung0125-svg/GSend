@@ -1,12 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { GSendClient, Snapshot } from "../core/client";
-import {
-  chooseSaveDirectory,
-  directPickerSupported,
-  formatBytes,
-  maxFileBytes,
-  prepareStorage,
-} from "../core/sink";
+import { directPickerSupported, formatBytes, maxFileBytes, prepareStorage } from "../core/sink";
 import { useI18n } from "../i18n";
 import DeviceList from "./DeviceList";
 
@@ -69,20 +63,17 @@ export default function Landing({ client, state, prefill }: Props) {
   };
 
   /**
-   * The folder picker needs transient user activation, and activation does not survive
-   * the round trip to the other device — so the destination is chosen here, on the same
-   * click that joins, and every file this session brings in goes straight into it.
+   * Joining connects and does nothing else. It used to open the folder picker first,
+   * on the same press, since the picker needs that user activation — but a system
+   * dialog appearing where someone had pressed Enter to connect read as the app
+   * misbehaving. A folder chosen earlier is still used, restored at startup for as long
+   * as the browser keeps the grant, and the connecting and session screens both offer
+   * to choose one.
    */
-  const join = async (event: React.FormEvent) => {
+  const join = (event: React.FormEvent) => {
     event.preventDefault();
     if (code.length !== CODE_LENGTH) return;
-
-    const ceiling = formatBytes(maxFileBytes());
-    const choice = directPickerSupported()
-      ? await chooseSaveDirectory()
-      : ({ picked: false, dismissed: false } as const);
     client.join(code);
-    if (!choice.picked) client.noticeStorageFallback(ceiling, choice.dismissed);
   };
 
   const stagedBytes = files.reduce((sum, file) => sum + file.size, 0);
@@ -200,7 +191,7 @@ export default function Landing({ client, state, prefill }: Props) {
           {t("landing.joinSub")}
         </p>
 
-        <form className="code-form" onSubmit={(event) => void join(event)}>
+        <form className="code-form" onSubmit={join}>
           <div className="code-entry">
             {Array.from({ length: CODE_LENGTH }, (_, index) => {
               const digit = code[index];
@@ -242,12 +233,6 @@ export default function Landing({ client, state, prefill }: Props) {
             {t("landing.join")}
           </button>
         </form>
-
-        {directPickerSupported() && (
-          <p className="sub" style={{ marginTop: 16 }}>
-            {t("landing.joinFolderHint")}
-          </p>
-        )}
 
         <hr className="hr" />
         <div className="footnote">

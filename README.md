@@ -17,8 +17,8 @@ Browser A  ──WebSocket──►  Cloudflare Worker  ◄──WebSocket──
 
 1. **A** picks the files or text to send, then asks for a code. The Worker reserves a
    random 4-digit code, valid for 60 seconds.
-2. **B** enters the code or scans the QR, choosing a folder to receive into on the same
-   click. The code is burned on first use.
+2. **B** enters the code or scans the QR, and is connecting at once. The code is burned
+   on first use.
 3. The two browsers exchange SDP and ICE candidates through the Worker and hole-punch
    a direct connection. The server never sees file content.
 4. The queue starts moving as soon as the data channel opens — no second confirmation.
@@ -99,8 +99,8 @@ $0.05/GB. `/api/stats` reports how many sessions actually used the relay.
 1. `npm install` 安裝套件(只需一次)。
 2. `npm run dev`,瀏覽器開 `http://localhost:5173`。
 3. 開兩個視窗:一邊拖進檔案後按 **產生數字碼**,另一邊輸入該碼按 **加入並接收**。
-4. 加入時會跳出資料夾選擇器(Chromium 桌面版);選好之後檔案就會直接寫進去,
-   不需要再按同意。兩邊接著可以繼續互傳檔案和文字。
+4. 加入後會直接連線,不需要再按同意。想讓檔案直接寫進某個資料夾(Chromium 桌面版),
+   在連線中或傳輸畫面按 **選擇儲存資料夾**;兩邊接著可以繼續互傳檔案和文字。
 5. 要上線時執行 `npm run deploy`(需要先 `npx wrangler login`)。
 
 ## Deploying
@@ -154,11 +154,14 @@ Safari needs this because it closes the signalling socket and suspends WebRTC wh
 tab goes to the background, and a bfcache restore does not reliably report it.
 
 **Received files stream to disk**, not into tab memory, and there is no fixed size
-ceiling. Where the File System Access API exists (Chromium desktop), the receiver picks
-a folder on the click that joins — that click is the user activation the picker needs,
-and it cannot be deferred until the file list arrives — and every chunk is written
-straight into the destination file. Nothing is buffered on the way, so the limit is free
-disk space and a finished file is already saved. The trade is that those writes are
+ceiling. Where the File System Access API exists (Chromium desktop), the receiver can
+pick a folder — from the device list, while connecting, or during the session — and
+every chunk is written straight into the destination file. The choice is remembered and
+restored for as long as the browser keeps the grant. Joining itself never opens the
+picker: a system dialog appearing where someone pressed Enter to connect read as the app
+misbehaving, and files that arrive before a folder is chosen are simply saved from
+browser storage instead. Nothing is buffered on the way, so the limit is free disk space
+and a finished file is already saved. The trade is that those writes are
 committed by the browser only when the stream closes: a dropped connection is survivable
 because the stream outlives it, but a page reload is not, so a half-received file on that
 path is not offered for resume.

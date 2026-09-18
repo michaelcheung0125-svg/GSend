@@ -516,19 +516,6 @@ ${trimmed}` : trimmed;
     this.emitNow();
   }
 
-  /**
-   * Raised on the receiving side when no folder was picked, so the person knows their
-   * files are landing in browser storage with a ceiling on them.
-   */
-  noticeStorageFallback(size: string, dismissed = false): void {
-    // Someone who opened the picker and closed it again may have been refused rather
-    // than have changed their mind, and that is worth saying before the size ceiling.
-    this.notice = dismissed
-      ? { key: "notice.folderBlocked" }
-      : { key: "notice.noFolder", params: { size } };
-    this.emitNow();
-  }
-
   cancelTransfer(fileId: string): void {
     this.transfer.cancel(fileId);
   }

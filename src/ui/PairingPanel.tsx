@@ -33,10 +33,9 @@ export default function PairingPanel({ client, state }: Props) {
   const statusLines = `stun    ok\nturn    ${state.relayEngaged ? "engaged" : "standby"}`;
 
   /*
-    Arriving by QR or link joins without anyone pressing anything, so there was no
-    click to hang the folder picker off. Connecting takes a moment either way, and
-    offering the choice here fills it — take it and files stream to disk, skip it and
-    they land in browser storage instead.
+    Joining never stops to ask for a folder, so this is where the choice is offered.
+    Connecting takes a moment either way, and the offer fills it — take it and files
+    stream to disk, skip it and they land in browser storage instead.
   */
   const offerFolder = directPickerSupported() && state.savingTo === null;
 
