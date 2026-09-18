@@ -186,6 +186,13 @@ feature needs no server-side state: no registry, no accounts, nothing to leak. T
 per-window derivation costs one reconnect every six hours, which the client schedules
 for itself.
 
+Because that room outlives any single session, every message in it names the session it
+belongs to. A session opens only on an explicit call, and only on a device that is not
+already busy — a busy one says so and the caller is told. Ending a session tells the
+other device too, so it stops instead of retrying into the room, and a retry that slips
+through anyway (the other tab was closed rather than ended) carries a dead session's
+name and is ignored rather than mistaken for a new call.
+
 iOS is the weak spot. Safari evicts IndexedDB for a site that has not been used in seven
 days unless it is installed to the home screen, so a pairing there can lapse and need
 redoing; the app asks for persistent storage, which helps, and an installed copy is

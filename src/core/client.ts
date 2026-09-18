@@ -118,6 +118,23 @@ interface InstanceAnnouncement {
   instance: string;
 }
 
+/**
+ * Every message between paired devices names the session it belongs to. The rendezvous
+ * room outlives any one session, so without this a device still retrying a connection
+ * the other side had already ended looked exactly like a device calling afresh.
+ */
+interface GroupEnvelope {
+  session: string;
+  /** Opens a session. Nothing else may, so leftovers of an old one can never start one. */
+  call?: true;
+  /** This side has ended the session and will not answer again. */
+  bye?: true;
+  /** The call was refused because this device is already in a session. */
+  busy?: true;
+  /** A WebRTC signal for the session. */
+  data?: unknown;
+}
+
 export class GSendClient {
   private readonly signaling: Signaling;
   private readonly transfer: TransferEngine;
@@ -145,6 +162,8 @@ export class GSendClient {
   private paired: KnownDevice[] = [];
   private presence = new Set<string>();
   private peerDevice: string | null = null;
+  /** Names the device session in progress, so its messages can be told from stale ones. */
+  private groupSession: string | null = null;
   private handshake: Handshake | null = null;
   private verified = false;
   private woken = false;
@@ -301,9 +320,53 @@ export class GSendClient {
     this.pendingText = text;
     this.mode = "group";
     this.peerDevice = id;
+    this.groupSession = crypto.randomUUID();
     // No host and guest here, so the tie is broken by id. Both sides read it the same
     // way, which is all perfect negotiation needs to settle offer collisions.
     this.role = this.identity.id < id ? "host" : "guest";
+    this.phase = "pairing";
+    this.peerPresent = true;
+    this.emitNow();
+    // Said outright rather than left to the first offer: when this side is the guest it
+    // makes no offer, and the other device would never learn it was being called.
+    this.group.send(id, { session: this.groupSession, call: true } satisfies GroupEnvelope);
+    void this.startPeer();
+  }
+
+  /**
+   * A message arrived from a paired device. Only an explicit call opens a session, and
+   * only on a device that is not already in one: answering anything else used to let a
+   * device still retrying a session that had ended here tear down whatever this one had
+   * moved on to, a code session included.
+   */
+  private onGroupSignal(peer: string, raw: unknown): void {
+    const msg = raw as Partial<GroupEnvelope> | null;
+    if (!msg || typeof msg.session !== "string") return;
+
+    if (msg.session === this.groupSession) {
+      if (peer !== this.peerDevice) return;
+      if (msg.bye || msg.busy) {
+        // Over on their side already, so there is nobody left to say goodbye to.
+        this.groupSession = null;
+        this.end({ key: msg.busy ? "error.deviceBusy" : "error.peerEnded" });
+        return;
+      }
+      if (msg.data !== undefined) this.onSignal(msg.data);
+      return;
+    }
+
+    if (!msg.call) return;
+    if (!this.identity || !this.paired.some((known) => known.id === peer)) return;
+    if (this.phase !== "idle" && this.phase !== "ended") {
+      this.group.send(peer, { session: msg.session, busy: true } satisfies GroupEnvelope);
+      return;
+    }
+
+    this.resetSession();
+    this.mode = "group";
+    this.peerDevice = peer;
+    this.groupSession = msg.session;
+    this.role = this.identity.id < peer ? "host" : "guest";
     this.phase = "pairing";
     this.peerPresent = true;
     this.emitNow();
@@ -311,25 +374,14 @@ export class GSendClient {
   }
 
   /**
-   * A signal arrived from a paired device. If this side is idle the other one is
-   * calling, so answer it; otherwise ignore anything not from the peer already engaged.
+   * Tell the paired device this session is over. Without it the other side cannot tell
+   * an ending from a dropped connection, and keeps retrying into the rendezvous room.
    */
-  private onGroupSignal(peer: string, data: unknown): void {
-    if (this.peerDevice && this.peerDevice !== peer) return;
-
-    if (!this.peerDevice) {
-      if (!this.identity || !this.paired.some((known) => known.id === peer)) return;
-      this.resetSession();
-      this.mode = "group";
-      this.peerDevice = peer;
-      this.role = this.identity.id < peer ? "host" : "guest";
-      this.phase = "pairing";
-      this.peerPresent = true;
-      this.emitNow();
-      void this.startPeer();
-    }
-
-    this.onSignal(data);
+  private hangUp(): void {
+    const session = this.groupSession;
+    this.groupSession = null;
+    if (!session || !this.peerDevice) return;
+    this.group.send(this.peerDevice, { session, bye: true } satisfies GroupEnvelope);
   }
 
   subscribe = (listener: () => void): (() => void) => {
@@ -672,7 +724,9 @@ ${trimmed}` : trimmed;
    */
   private sendSignal(data: unknown): void {
     if (this.mode === "group") {
-      if (this.peerDevice) this.group.send(this.peerDevice, data);
+      if (this.peerDevice && this.groupSession) {
+        this.group.send(this.peerDevice, { session: this.groupSession, data } satisfies GroupEnvelope);
+      }
       return;
     }
     this.signaling.send({ t: "signal", data });
@@ -1030,6 +1084,7 @@ ${trimmed}` : trimmed;
   // --- lifecycle -----------------------------------------------------------
 
   private end(reason: Message | null): void {
+    this.hangUp();
     this.phase = "ended";
     this.error = reason;
     this.peerPresent = false;
@@ -1050,6 +1105,7 @@ ${trimmed}` : trimmed;
   }
 
   private resetSession(): void {
+    this.hangUp();
     this.clearTimers();
     this.peer?.close();
     this.peer = null;
