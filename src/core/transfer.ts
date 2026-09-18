@@ -18,6 +18,7 @@ import {
   reopenSink,
   type FileSink,
 } from "./sink";
+import type { SavableFile } from "./save";
 
 /** How much of the source file to pull into memory at a time before framing it. */
 const READ_BLOCK_BYTES = 4 * 1024 * 1024;
@@ -44,6 +45,8 @@ export interface TransferView {
   direction: Direction;
   problem?: TransferProblem;
   downloadUrl?: string;
+  /** The person has already saved this one from browser storage, on its own or with the rest. */
+  downloaded?: boolean;
   /** Set when the file went straight into the person's own folder, under this name. */
   savedAs?: string;
   startedAt: number;
@@ -79,6 +82,9 @@ interface IncomingTransfer {
   status: TransferStatus;
   problem?: TransferProblem;
   downloadUrl?: string;
+  /** Kept beside the URL so a batch can be shared without an await in the way. */
+  blob?: Blob;
+  downloaded: boolean;
   savedAs?: string;
   startedAt: number;
   updatedAt: number;
@@ -135,6 +141,7 @@ export class TransferEngine {
           sink: createCompletedSink(stored.savedAs),
           received: stored.size,
           status: "done",
+          downloaded: false,
           savedAs: stored.savedAs,
           startedAt: now,
           updatedAt: now,
@@ -155,6 +162,8 @@ export class TransferEngine {
           received: stored.size,
           status: "done",
           downloadUrl: URL.createObjectURL(blob),
+          blob,
+          downloaded: stored.downloaded ?? false,
           startedAt: now,
           updatedAt: now,
           lastAckAt: 0,
@@ -171,6 +180,7 @@ export class TransferEngine {
         sink: reopened.sink,
         received: Math.min(reopened.received, stored.size),
         status: "paused",
+        downloaded: false,
         startedAt: now,
         updatedAt: now,
         lastAckAt: 0,
@@ -198,6 +208,7 @@ export class TransferEngine {
         size: transfer.meta.size,
         mime: transfer.meta.mime,
         done: transfer.status === "done",
+        downloaded: transfer.downloaded || undefined,
         savedAs: transfer.savedAs,
       });
     }
@@ -300,10 +311,33 @@ export class TransferEngine {
       direction: "receive" as const,
       problem: t.problem,
       downloadUrl: t.downloadUrl,
+      downloaded: t.downloaded,
       savedAs: t.savedAs,
       startedAt: t.startedAt,
       updatedAt: t.updatedAt,
     }));
+  }
+
+  /** Finished files still sitting in browser storage unsaved, in the order they arrived. */
+  unsavedDownloads(): SavableFile[] {
+    const files: SavableFile[] = [];
+    for (const [id, t] of this.incoming) {
+      if (t.status !== "done" || t.downloaded || !t.downloadUrl || !t.blob) continue;
+      files.push({ id, name: t.meta.name, url: t.downloadUrl, blob: t.blob });
+    }
+    return files;
+  }
+
+  /**
+   * Remembered across a reload too, so "save all" on a restored session does not hand
+   * over again the files that were already saved before it.
+   */
+  markDownloaded(fileId: string): void {
+    const transfer = this.incoming.get(fileId);
+    if (!transfer || transfer.downloaded) return;
+    transfer.downloaded = true;
+    this.callbacks.onChange();
+    this.callbacks.onTransfersChanged();
   }
 
   /**
@@ -472,6 +506,7 @@ export class TransferEngine {
         sink: await createSink(meta.id, meta.name),
         received: 0,
         status: "active",
+        downloaded: false,
         startedAt: now,
         updatedAt: now,
         lastAckAt: 0,
@@ -669,8 +704,10 @@ export class TransferEngine {
       const blob = await transfer.sink.finish(transfer.meta.mime);
       // A null blob means the bytes went straight into the person's folder; there is
       // nothing to hand back, only the name to tell them where to look.
-      if (blob) transfer.downloadUrl = URL.createObjectURL(blob);
-      else transfer.savedAs = transfer.sink.savedAs ?? transfer.meta.name;
+      if (blob) {
+        transfer.blob = blob;
+        transfer.downloadUrl = URL.createObjectURL(blob);
+      } else transfer.savedAs = transfer.sink.savedAs ?? transfer.meta.name;
       transfer.status = "done";
       transfer.updatedAt = Date.now();
       this.wireIndex.delete(transfer.meta.wireId);

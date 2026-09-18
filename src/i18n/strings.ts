@@ -86,6 +86,7 @@ export const en = {
   "transfer.send": "Send",
   "transfer.copy": "Copy",
   "transfer.save": "Save",
+  "transfer.saveAll": "Save all",
   "transfer.cancel": "Cancel",
   "transfer.limitDisk": "disk",
 
@@ -97,6 +98,7 @@ export const en = {
 
   "row.sent": "Sent",
   "row.received": "Received",
+  "row.saved": "Saved",
   "row.savedTo": "Saved · {name}",
   "row.cancelled": "Cancelled",
   "row.failed": "Failed",
@@ -240,6 +242,7 @@ export const zh: Record<MessageKey, string> = {
   "transfer.send": "傳送",
   "transfer.copy": "複製",
   "transfer.save": "儲存",
+  "transfer.saveAll": "全部儲存",
   "transfer.cancel": "取消",
   "transfer.limitDisk": "磁碟",
 
@@ -251,6 +254,7 @@ export const zh: Record<MessageKey, string> = {
 
   "row.sent": "已送出",
   "row.received": "已接收",
+  "row.saved": "已儲存",
   "row.savedTo": "已存檔 · {name}",
   "row.cancelled": "已取消",
   "row.failed": "失敗",

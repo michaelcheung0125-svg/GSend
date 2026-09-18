@@ -204,6 +204,14 @@ disk. Backgrounding a phone mid-transfer no longer costs you the file. On the
 direct-to-disk path there is nothing to keep available: the file is already where it was
 asked to go, and the row says so instead of offering a save button.
 
+**Several received files save with one press.** Once two or more are waiting, a "Save
+all" button appears above the list and hands over every file not yet saved. Most browsers
+get one download per file, spaced a moment apart, and ask once whether the site may
+download several. iPhone and iPad get the share sheet instead, because Safari drops
+back-to-back downloads after the first; the sheet takes the whole set and offers "Save to
+Files", or the photo library for pictures and video. Rows remember which files were
+saved, across a reload too, so the button never hands the same file over twice.
+
 **A receiver can reload mid-transfer and carry on.** The bytes are already on disk, and
 the transfer's metadata rides along in `sessionStorage`, so a reloaded page reopens the
 file, asks it how many bytes actually arrived, and tells the sender where to pick up.

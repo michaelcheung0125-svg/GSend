@@ -11,6 +11,8 @@ export interface StoredTransfer {
   mime: string;
   /** Complete and waiting to be saved, rather than still arriving. */
   done: boolean;
+  /** Already saved from browser storage once; kept so a restored row still says so. */
+  downloaded?: boolean;
   /**
    * Set when the bytes went straight into the folder the person picked, under this
    * name. Those writes are committed by the browser only when the stream closes, so a

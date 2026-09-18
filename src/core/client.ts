@@ -10,6 +10,7 @@ import {
 } from "../../shared/protocol";
 import type { Message } from "../i18n/strings";
 import { PeerLink, STUN_ONLY, type PeerChannels, type PeerState } from "./peer";
+import { saveFiles } from "./save";
 import { clearSession, loadSession, saveSession } from "./session-store";
 import {
   chooseSaveDirectory,
@@ -161,6 +162,8 @@ export class GSendClient {
   private pendingText: string | null = null;
   private notice: Message | null = null;
   private error: Message | null = null;
+  /** A "save all" is still handing files over; a second press would repeat them. */
+  private savingAll = false;
 
   private closedByUser = false;
   private reconnectAttempt = 0;
@@ -476,6 +479,25 @@ ${trimmed}` : trimmed;
 
   cancelTransfer(fileId: string): void {
     this.transfer.cancel(fileId);
+  }
+
+  /** The row's own save link was pressed; the browser does the rest. */
+  markSaved(fileId: string): void {
+    this.transfer.markDownloaded(fileId);
+  }
+
+  /**
+   * Save every finished file that has not been saved yet, in one press. Must be called
+   * straight from a click, for the same user-activation reason as the folder picker.
+   */
+  async saveAll(): Promise<void> {
+    if (this.savingAll) return;
+    this.savingAll = true;
+    try {
+      await saveFiles(this.transfer.unsavedDownloads(), (id) => this.transfer.markDownloaded(id));
+    } finally {
+      this.savingAll = false;
+    }
   }
 
   dismissNotice(): void {

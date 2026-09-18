@@ -25,6 +25,10 @@ export default function TransferPanel({ client, state }: Props) {
   const upBytes = state.outgoing.reduce((sum, row) => sum + row.transferred, 0);
   const downBytes = state.incoming.reduce((sum, row) => sum + row.transferred, 0);
   const itemCount = transfers.length + state.texts.length;
+  // One file has its own button right there; the shortcut earns its place from two up.
+  const unsaved = state.incoming.filter(
+    (row) => row.status === "done" && row.downloadUrl && !row.downloaded,
+  ).length;
 
   const pick = (list: FileList | null) => {
     if (!list || list.length === 0) return;
@@ -62,6 +66,16 @@ export default function TransferPanel({ client, state }: Props) {
               down: formatBytes(downBytes),
             })}
           </span>
+          {unsaved > 1 && (
+            <button
+              type="button"
+              className="btn btn--primary btn--tiny session-head__action"
+              onClick={() => void client.saveAll()}
+            >
+              {t("transfer.saveAll")}{" "}
+              <span className="session-head__count">{unsaved}</span>
+            </button>
+          )}
         </div>
 
         {/*
@@ -307,7 +321,9 @@ function TransferRow({
   const statusText = done
     ? transfer.direction === "send"
       ? t("row.sent")
-      : t("row.received")
+      : transfer.downloaded
+        ? t("row.saved")
+        : t("row.received")
     : stopped
       ? (problem ?? t("row.cancelled"))
       : transfer.status === "paused"
@@ -358,7 +374,14 @@ function TransferRow({
           </span>
         )}
         {done && transfer.downloadUrl && (
-          <a className="btn btn--primary btn--tiny" href={transfer.downloadUrl} download={transfer.name}>
+          // Still offered once saved, in case the first save went astray, but it steps
+          // back so the files that still need a press are the ones that stand out.
+          <a
+            className={transfer.downloaded ? "btn btn--secondary btn--tiny" : "btn btn--primary btn--tiny"}
+            href={transfer.downloadUrl}
+            download={transfer.name}
+            onClick={() => client.markSaved(transfer.id)}
+          >
             {t("transfer.save")}
           </a>
         )}
