@@ -83,13 +83,15 @@ export async function createGroup(): Promise<string> {
  * would look like the app forgot it, and it comes back by pairing again.
  *
  * Returns how many previously known devices are now in the wrong group, so the
- * interface can say so instead of leaving it to be discovered.
+ * interface can say so instead of leaving it to be discovered. The device handing over
+ * the group is not one of them — it may already be on the list from a moment earlier in
+ * the same pairing, and it is the one device certain to be in the new room.
  */
-export async function adoptGroup(secret: string): Promise<number> {
+export async function adoptGroup(secret: string, inviter: string): Promise<number> {
   const existing = await read();
   if (existing?.secret === secret) return 0;
 
-  const stranded = existing?.devices.length ?? 0;
+  const stranded = existing?.devices.filter((device) => device.id !== inviter).length ?? 0;
   await write({ secret, devices: existing?.devices ?? [] });
   return stranded;
 }

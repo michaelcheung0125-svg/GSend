@@ -70,6 +70,13 @@ export class Handshake {
   private answered = false;
   private settled = false;
   private invited = false;
+  /**
+   * Each step awaits crypto, and the peer's next message can land before the last one
+   * is through: a proof arriving mid-claim found no claim to check and was dropped, so
+   * the slower device never recorded the pairing while the other did. The channel is
+   * ordered, so running each message only after the previous one keeps them in order.
+   */
+  private queue: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly identity: Identity,
@@ -96,20 +103,24 @@ export class Handshake {
   handle(msg: PeerControl): boolean {
     switch (msg.t) {
       case "auth":
-        void this.onClaim(msg);
+        this.enqueue(() => this.onClaim(msg));
         return true;
       case "auth-proof":
-        void this.onProof(msg.sig);
+        this.enqueue(() => this.onProof(msg.sig));
         return true;
       case "group-invite":
-        void this.onInvite(msg.secret);
+        this.enqueue(() => this.onInvite(msg.secret));
         return true;
       case "auth-fail":
-        this.reject("rejected-by-peer");
+        this.enqueue(async () => this.reject("rejected-by-peer"));
         return true;
       default:
         return false;
     }
+  }
+
+  private enqueue(step: () => Promise<void>): void {
+    this.queue = this.queue.then(step).catch(() => undefined);
   }
 
   private async onClaim(msg: Extract<PeerControl, { t: "auth" }>): Promise<void> {
@@ -208,7 +219,7 @@ export class Handshake {
     if (!this.proved || !this.claim) return;
     if (await groupSecret() === secret) return;
 
-    const stranded = await adoptGroup(secret);
+    const stranded = await adoptGroup(secret, this.claim.id);
     // Re-record the peer, which the adoption's merged list may not carry yet.
     await rememberDevice({
       id: this.claim.id,
