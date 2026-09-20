@@ -3,12 +3,21 @@
  * rather than straight into a folder the person picked.
  *
  * There is no single browser call for "save these", so this takes whichever route the
- * platform handles well. Almost everywhere that is one download per file, fired in a
- * row: browsers ask once whether the site may download several files and then take the
- * rest. iOS is the exception — Safari drops every download after the first when they
- * arrive back to back — but its share sheet takes a whole set in one go and offers
- * "Save to Files" or, for photos and videos, saving them to the library.
+ * platform handles well, in order of how reliably the files actually arrive:
+ *
+ * - A folder, wherever one can be had (Chromium desktop). The files are written into it
+ *   directly, and it is the only route that reports whether each one was written.
+ * - The share sheet on iPhone and iPad, which takes a whole set in one go and offers
+ *   "Save to Files", or the photo library for pictures and video.
+ * - One download per file otherwise. Browsers ask before the second file and drop the
+ *   rest while nobody answers, which is why this comes last.
  */
+import {
+  chooseSaveDirectory,
+  directPickerSupported,
+  saveDirectoryName,
+  writeToSaveDirectory,
+} from "./sink";
 
 export interface SavableFile {
   id: string;
@@ -17,6 +26,9 @@ export interface SavableFile {
   blob: Blob;
 }
 
+/** Which route the files took, so the session can say what to expect of it. */
+export type SaveRoute = "folder" | "share" | "download" | "cancelled";
+
 /**
  * Chrome quietly loses some of a burst of downloads started in the same instant, so
  * they are spaced out. Short enough that a dozen files still feel like one action.
@@ -24,31 +36,45 @@ export interface SavableFile {
 const DOWNLOAD_GAP_MS = 250;
 
 /**
- * Must be called straight out of a click: the share sheet and the first download both
- * need the user activation, so nothing may be awaited before them. `onSaved` fires for
- * each file as it is handed over, so the rows can say which ones are done.
+ * Must be called straight out of a click: the folder picker, the share sheet and the
+ * first download all need the user activation, so nothing may be awaited before them.
+ * `onSaved` fires for each file as it is handed over, carrying the name it was written
+ * under when it went into a folder.
  */
 export async function saveFiles(
   files: SavableFile[],
-  onSaved: (id: string) => void,
-): Promise<void> {
-  if (files.length === 0) return;
+  onSaved: (id: string, savedAs: string | null) => void,
+): Promise<SaveRoute> {
+  if (files.length === 0) return "cancelled";
 
   if (prefersShareSheet()) {
     const outcome = await shareFiles(files);
-    if (outcome === "cancelled") return;
+    if (outcome === "cancelled") return "cancelled";
     if (outcome === "shared") {
-      for (const file of files) onSaved(file.id);
-      return;
+      for (const file of files) onSaved(file.id, null);
+      return "share";
     }
-    // Not shareable after all; downloads are still better than nothing.
+    // Not shareable after all; the other routes still beat nothing.
+  } else if (!saveDirectoryName() && directPickerSupported()) {
+    // Asked once, rather than a download per file that the browser may refuse halfway
+    // through. Coming back empty-handed is taken as "not into a folder, then".
+    await chooseSaveDirectory();
   }
 
-  for (const [index, file] of files.entries()) {
+  const leftover: SavableFile[] = [];
+  for (const file of files) {
+    const savedAs = saveDirectoryName() ? await writeToSaveDirectory(file.name, file.blob) : null;
+    if (savedAs) onSaved(file.id, savedAs);
+    else leftover.push(file);
+  }
+  if (leftover.length === 0) return "folder";
+
+  for (const [index, file] of leftover.entries()) {
     if (index > 0) await delay(DOWNLOAD_GAP_MS);
     triggerDownload(file.url, file.name);
-    onSaved(file.id);
+    onSaved(file.id, null);
   }
+  return "download";
 }
 
 function triggerDownload(url: string, name: string): void {

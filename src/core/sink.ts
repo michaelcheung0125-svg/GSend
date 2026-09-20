@@ -175,6 +175,27 @@ export function saveDirectoryName(): string | null {
 }
 
 /**
+ * Put a file that is already complete into the folder the person picked, under a name
+ * that does not collide, exactly as an arriving file would be. Returns the name it
+ * landed under, or null when there is no folder or the write failed.
+ */
+export async function writeToSaveDirectory(name: string, blob: Blob): Promise<string | null> {
+  const dir = saveDirectory;
+  if (!dir) return null;
+  try {
+    const filename = await freeName(dir, name);
+    const handle = await dir.getFileHandle(filename, { create: true });
+    const stream = await handle.createWritable({ keepExistingData: false });
+    await stream.write(blob);
+    await stream.close();
+    return filename;
+  } catch {
+    // The grant lapsed, or the folder went away. The caller falls back to a download.
+    return null;
+  }
+}
+
+/**
  * Bring back the folder chosen on an earlier visit, but only if the browser still
  * considers the grant live. Where it has lapsed to "prompt" the handle is left alone:
  * re-asking needs a click, and the picker reopens on the same folder anyway.

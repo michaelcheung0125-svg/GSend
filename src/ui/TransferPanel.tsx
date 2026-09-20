@@ -373,7 +373,8 @@ function TransferRow({
             {t("row.savedTo", { name: transfer.savedAs })}
           </span>
         )}
-        {done && transfer.downloadUrl && (
+        {/* A file already written into their folder needs no button, only its name. */}
+        {done && transfer.downloadUrl && !transfer.savedAs && (
           // Still offered once saved, in case the first save went astray, but it steps
           // back so the files that still need a press are the ones that stand out.
           <a

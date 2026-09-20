@@ -104,6 +104,8 @@ export const en = {
   "row.pending": "Waiting for the other device",
   "row.progress": "{percent}% · {transferred}",
 
+  "notice.multiDownload":
+    "Browsers ask before downloading several files at once, and drop the rest until that is answered. If only some arrived, allow it and save the others from their own buttons.",
   "notice.regrouped":
     "This device joined the other one's group. {count} device(s) it knew before are in the old group and need pairing again.",
   "notice.folderBlocked":
@@ -258,6 +260,7 @@ export const zh: Record<MessageKey, string> = {
   "row.pending": "正在等待另一台裝置",
   "row.progress": "{percent}% · {transferred}",
 
+  "notice.multiDownload": "瀏覽器在一次下載多個檔案前會先問一次,在你回答之前其餘的會被丟掉。如果只存到其中幾個,請在網址列允許,再用各行的「儲存」按鈕存回其餘的。",
   "notice.regrouped": "這台裝置改加入了對方的裝置群組。原本認識的 {count} 台留在舊群組,需要重新配對一次。",
   "notice.folderBlocked": "沒有選到資料夾,檔案會先留在瀏覽器裡。如果剛才顯示「資料夾中包含系統檔案」,那是瀏覽器擋的、不是 GSend:磁碟根目錄、你的使用者資料夾本身、Windows、Program Files 與 AppData 都不允許。改選它們裡面的一般資料夾就可以,例如「下載」,或自己新建一個。",
 

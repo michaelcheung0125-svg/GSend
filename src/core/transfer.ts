@@ -332,10 +332,11 @@ export class TransferEngine {
    * Remembered across a reload too, so "save all" on a restored session does not hand
    * over again the files that were already saved before it.
    */
-  markDownloaded(fileId: string): void {
+  markDownloaded(fileId: string, savedAs?: string): void {
     const transfer = this.incoming.get(fileId);
     if (!transfer || transfer.downloaded) return;
     transfer.downloaded = true;
+    if (savedAs) transfer.savedAs = savedAs;
     this.callbacks.onChange();
     this.callbacks.onTransfersChanged();
   }

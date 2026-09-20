@@ -215,12 +215,17 @@ direct-to-disk path there is nothing to keep available: the file is already wher
 asked to go, and the row says so instead of offering a save button.
 
 **Several received files save with one press.** Once two or more are waiting, a "Save
-all" button appears above the list and hands over every file not yet saved. Most browsers
-get one download per file, spaced a moment apart, and ask once whether the site may
-download several. iPhone and iPad get the share sheet instead, because Safari drops
-back-to-back downloads after the first; the sheet takes the whole set and offers "Save to
-Files", or the photo library for pictures and video. Rows remember which files were
-saved, across a reload too, so the button never hands the same file over twice.
+all" button appears above the list and hands over every file not yet saved. Which route
+it takes is a question of how reliably the files actually arrive. Where a folder can be
+had (Chromium desktop) it asks for one and writes them all into it, because a browser
+asks before the second download and drops the rest until that is answered — two photos
+became one saved photo, with both rows claiming to be saved. Writing into a folder is
+also the only route that reports per file whether the write happened, so the rows can
+say which name each file landed under. iPhone and iPad get the share sheet, which takes
+the whole set and offers "Save to Files" or the photo library. Anywhere else it is still
+one download per file, spaced a moment apart, followed by a note about allowing them.
+Rows remember which files were saved, across a reload too, so the button never hands the
+same file over twice.
 
 **A receiver can reload mid-transfer and carry on.** The bytes are already on disk, and
 the transfer's metadata rides along in `sessionStorage`, so a reloaded page reopens the

@@ -533,7 +533,16 @@ ${trimmed}` : trimmed;
     if (this.savingAll) return;
     this.savingAll = true;
     try {
-      await saveFiles(this.transfer.unsavedDownloads(), (id) => this.transfer.markDownloaded(id));
+      const waiting = this.transfer.unsavedDownloads();
+      const route = await saveFiles(waiting, (id, savedAs) =>
+        this.transfer.markDownloaded(id, savedAs ?? undefined),
+      );
+      // Only the download route can lose files without saying so: the browser asks
+      // before the second one and drops the rest until that has been answered.
+      if (route === "download" && waiting.length > 1) {
+        this.notice = { key: "notice.multiDownload" };
+        this.emitNow();
+      }
     } finally {
       this.savingAll = false;
     }
