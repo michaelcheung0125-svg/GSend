@@ -109,7 +109,7 @@ export const en = {
   "notice.regrouped":
     "This device joined the other one's group. {count} device(s) it knew before are in the old group and need pairing again.",
   "notice.folderBlocked":
-    "No folder chosen — files will wait in the browser instead. If the picker said the folder holds system files, that is your browser refusing it, not GSend: a drive root, your user folder itself, Windows, Program Files and AppData are all off limits. Pick an ordinary folder inside one of them, such as Downloads, or make a new one.",
+    "No folder chosen, so the files are still waiting in the browser. If the picker said the folder holds system files, that was the browser refusing it, not GSend: it will not hand a site Downloads, Desktop or Documents themselves, nor a drive root, your user folder, Windows, Program Files or AppData. Make a new folder inside Downloads (GSend, say) and pick that one — files you receive later will go there on their own.",
 
   "devices.title": "Your devices",
   "devices.thisDevice": "This device",
@@ -262,7 +262,7 @@ export const zh: Record<MessageKey, string> = {
 
   "notice.multiDownload": "瀏覽器在一次下載多個檔案前會先問一次,在你回答之前其餘的會被丟掉。如果只存到其中幾個,請在網址列允許,再用各行的「儲存」按鈕存回其餘的。",
   "notice.regrouped": "這台裝置改加入了對方的裝置群組。原本認識的 {count} 台留在舊群組,需要重新配對一次。",
-  "notice.folderBlocked": "沒有選到資料夾,檔案會先留在瀏覽器裡。如果剛才顯示「資料夾中包含系統檔案」,那是瀏覽器擋的、不是 GSend:磁碟根目錄、你的使用者資料夾本身、Windows、Program Files 與 AppData 都不允許。改選它們裡面的一般資料夾就可以,例如「下載」,或自己新建一個。",
+  "notice.folderBlocked": "沒有選到資料夾,檔案仍然留在瀏覽器裡。如果剛才顯示「資料夾中包含系統檔案」,那是瀏覽器擋的、不是 GSend:「下載」「桌面」「文件」這些資料夾本身,還有磁碟根目錄、使用者資料夾、Windows、Program Files、AppData 都不能直接選。在「下載」裡按「新增資料夾」建一個(例如 GSend)再選它就可以,之後收到的檔案都會自動存進去。",
 
   "devices.title": "你的裝置",
   "devices.thisDevice": "這台裝置",

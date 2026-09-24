@@ -542,6 +542,9 @@ ${trimmed}` : trimmed;
       if (route === "download" && waiting.length > 1) {
         this.notice = { key: "notice.multiDownload" };
         this.emitNow();
+      } else if (route === "no-folder") {
+        this.notice = { key: "notice.folderBlocked" };
+        this.emitNow();
       }
     } finally {
       this.savingAll = false;

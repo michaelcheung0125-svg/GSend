@@ -26,8 +26,11 @@ export interface SavableFile {
   blob: Blob;
 }
 
-/** Which route the files took, so the session can say what to expect of it. */
-export type SaveRoute = "folder" | "share" | "download" | "cancelled";
+/**
+ * Which route the files took, so the session can say what to expect of it. "no-folder"
+ * means the picker came back empty and nothing was saved.
+ */
+export type SaveRoute = "folder" | "share" | "download" | "cancelled" | "no-folder";
 
 /**
  * Chrome quietly loses some of a burst of downloads started in the same instant, so
@@ -57,8 +60,13 @@ export async function saveFiles(
     // Not shareable after all; the other routes still beat nothing.
   } else if (!saveDirectoryName() && directPickerSupported()) {
     // Asked once, rather than a download per file that the browser may refuse halfway
-    // through. Coming back empty-handed is taken as "not into a folder, then".
-    await chooseSaveDirectory();
+    // through. An empty-handed return is usually Chrome refusing the folder rather than
+    // a change of mind: it will not hand a site Downloads, Desktop or Documents
+    // themselves, only the folders inside them, and Downloads is where the picker opens.
+    // Falling back to downloads here would walk straight into the prompt this route
+    // exists to avoid, so nothing is saved, and the caller explains what to pick.
+    const choice = await chooseSaveDirectory();
+    if (!choice.picked) return "no-folder";
   }
 
   const leftover: SavableFile[] = [];

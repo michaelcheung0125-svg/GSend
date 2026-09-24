@@ -221,7 +221,11 @@ had (Chromium desktop) it asks for one and writes them all into it, because a br
 asks before the second download and drops the rest until that is answered — two photos
 became one saved photo, with both rows claiming to be saved. Writing into a folder is
 also the only route that reports per file whether the write happened, so the rows can
-say which name each file landed under. iPhone and iPad get the share sheet, which takes
+say which name each file landed under. The folder has to be one Chrome will hand over:
+it refuses Downloads, Desktop and Documents themselves (only folders inside them), which
+is exactly where the picker opens. So a refusal saves nothing rather than falling back to
+downloads, and the note that follows says to make a folder inside Downloads and pick
+that. iPhone and iPad get the share sheet, which takes
 the whole set and offers "Save to Files" or the photo library. Anywhere else it is still
 one download per file, spaced a moment apart, followed by a note about allowing them.
 Rows remember which files were saved, across a reload too, so the button never hands the
